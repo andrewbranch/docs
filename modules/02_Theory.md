@@ -221,3 +221,22 @@ and still claim to implement “standards-compliant ESM.” Needless to say, Typ
 > #### Why doesn’t TypeScript delegate module resolution to third-party plugins?
 >
 > [TODO]
+>
+> * security boundary
+> * performance
+> * auto-imports and path completions
+> * chaos and conflicts
+
+The available `moduleResolution` options are:
+
+- **`classic`**: TypeScript’s oldest and most inscrutable module resolution mode, this is unfortunately the default when `module` is set to anything other than `commonjs`, `node16`, or `nodenext`. It does not represent any real-world module resolver and should never be used. It was kept around only for backwards compatibility.
+- **`node10`**: Formerly known as `node`, this is the unfortunate default when `module` is set to `commonjs`. It’s a pretty good model of Node versions older than v12, and sometimes it’s a passable approximation of how most bundlers do module resolution. It supports looking up packages from `node_modules`, loading directory `index.js` files, and omitting `.js` extensions in relative module specifiers. Because Node v12 introduced different module resolution rules for ES modules, though, it’s a very bad model of modern versions of Node. It should not be used for new projects.
+- **`node16`**: This is the counterpart of `--module node16` and is set by default with that `module` setting. Node v12 and later support both ESM and CJS, each of which uses its own module resolution algorithm. In Node, module specifiers in import statements and dynamic `import()` calls are not allowed to omit file extensions or `/index.js` suffixes, while module specifiers in `require` calls are. This module resolution mode understands and enforces this restriction where necessary, as determined by the [module detection rules](#module-kind-detection) instated by `--module node16`. (For `node16` and `nodenext`, `module` and `moduleResolution` go hand-in-hand: setting one to `node16` or `nodenext` while setting the other to something else has unsupported behavior and may be an error in the future.)
+- **`nodenext`**: Currently identical to `node16`, this is the counterpart of `--module nodenext` and is set by default with that `module` setting. It’s intended to be a forward-looking mode that will support new Node module resolution features as they’re added.
+- **`bundler`**: Node v12 introduced some new module resolution features for importing npm packages—the `exports` and `imports` fields of package.json—and many bundlers adopted those features without also adopting the stricter rules for ESM imports. This module resolution mode provides a base algorithm for code targeting a bundler. It supports package.json `exports` and `imports` by default, but can be configured to ignore them. It requires setting `module` to `esnext`.
+
+[TODO: link to reference pages for modern Node and `bundler`]
+
+### TypeScript imitates the host’s module resolution, but with types
+
+
