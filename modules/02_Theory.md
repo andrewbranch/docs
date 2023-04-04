@@ -175,25 +175,25 @@ TypeScript needs to know which of these rule sets to assume in order to provide 
 While the `module` compiler option can transform imports and exports in input files to different module formats in output files, the module _specifier_ (the string `from` which you `import`, or pass to `require`) is always emitted as-written. For example, an input like:
 
 ```ts
-import { add } from "./math.js";
+import { add } from "./math.mjs";
 add(1, 2);
 ```
 
 might be emitted as either:
 
 ```ts
-import { add } from "./math.js";
+import { add } from "./math.mjs";
 add(1, 2);
 ```
 
 or:
 
 ```ts
-const math_1 = require("./math.js");
+const math_1 = require("./math.mjs");
 math_1.add(1, 2);
 ```
 
-depending on the `module` compiler option, but the module specifier will always be `"./math.js"`. There is no compiler option that enables transforming, substituting, or rewriting module specifiers. Consequently, module specifiers must be written in a way that works for the code’s target runtime or bundler, and it’s TypeScript’s job to understand those _output_-relative specifiers. The process of finding the file referenced by a module specifier is called _module resolution_.
+depending on the `module` compiler option, but the module specifier will always be `"./math.mjs"`. There is no compiler option that enables transforming, substituting, or rewriting module specifiers. Consequently, module specifiers must be written in a way that works for the code’s target runtime or bundler, and it’s TypeScript’s job to understand those _output_-relative specifiers. The process of finding the file referenced by a module specifier is called _module resolution_.
 
 ## Module resolution
 
@@ -239,4 +239,87 @@ The available `moduleResolution` options are:
 
 ### TypeScript imitates the host’s module resolution, but with types
 
+Remember the three components of TypeScript’s [job](#typescripts-job-concerning-modules) concerning modules?
 
+1. Compile files into a valid **output module format**
+2. Ensure that imports in those **outputs** will **resolve successfully**
+3. Know what **type** to assign to **imported names**.
+
+Module resolution is involved with the last two. But when we spend most of our time working in input files, it can be easy to forget about (2)—that a key component of module resolution is validating that the output files will work at runtime, [without transformation](#module-specifiers-are-not-transformed). Let’s look at a new example with multiple files:
+
+```ts
+// @Filename: math.ts
+export function add(a: number, b: number) {
+  return a + b;
+}
+
+// @Filename: main.ts
+import { add } from "./math";
+add(1, 2);
+```
+
+When we see the import from `"./math"`, it might be tempting to think, “This is how one TypeScript file refers to another. The compiler follows this (extensionless) path in order to assign a type to `add`.”
+
+```mermaid
+graph LR
+  main.ts -- "#quot;./math#quot;" --> math.ts
+```
+
+This isn’t entirely wrong, but the reality is deeper. The resolution of `"./math"` (and subsequently, the type of `add`) need to reflect the reality of what happens at runtime to the _output_ files. A more robust way to think about this process would look like this:
+
+```mermaid
+graph LR
+  subgraph Output files
+    main.js
+    style main.js stroke-dasharray: 5, 5
+    math.js
+    style math.js stroke-dasharray: 5, 5
+  end
+  subgraph Input files
+    main.ts
+    math.ts
+  end
+  main.ts -. Map to output .-> main.js
+  main.js -- "#quot;./math#quot;" --> math.js
+  math.js -. Map to input .-> math.ts
+```
+
+This model makes it clear that for TypeScript, module resolution is mostly a matter of accurately modeling the host’s module resolution algorithm between output files, with a little bit of remapping applied to find type information. Let’s look at another example that appears unintuitive through the lens of the simple model, but makes perfect sense with the robust model:
+
+```ts
+// @moduleResolution: node16
+// @rootDir: src
+// @outDir: dist
+
+// @Filename: src/math.mts
+export function add(a: number, b: number) {
+  return a + b;
+}
+
+// @Filename: src/main.mts
+import { add } from "./math.mjs";
+add(1, 2);
+```
+
+Node ESM `import` declarations use a strict module resolution algorithm that requires relative paths to include file extensions. When we only think about input files, it’s a little strange that `"./math.mjs"` seems to resolve to `math.mts`. Assuming we’re using an `outDir` to put compiled outputs in a different directory, `math.mjs` doesn’t even exist next to `main.mts`! Why should this resolve? With our new mental model, it’s no problem:
+
+```mermaid
+graph LR
+  subgraph Output files
+    dist/main.mjs
+    style dist/main.mjs stroke-dasharray: 5, 5
+    dist/math.mjs
+    style dist/math.mjs stroke-dasharray: 5, 5
+  end
+  subgraph Input files
+    src/main.mts
+    src/math.mts
+  end
+  src/main.mts -. Map to output .-> dist/main.mjs
+  dist/main.mjs -- "#quot;./math.mjs#quot;" --> dist/math.mjs
+  dist/math.mjs -. Map to input .-> src/math.mts
+```
+
+Understanding this mental model may not immediately eliminate the strangeness of seeing output file extensions in input files, and it’s natural to think in terms of shortcuts: “`"./math.mjs"` refers to the input file `math.mts`. I have to write the output extension, but the compiler knows to look for `.mts` when I write `.mjs`.” This shortcut is even how the compiler works internally, but the more robust mental model explains _why_ module resolution in TypeScript works this way: given the constraint that the module specifier in the output file will be [the same](#module-specifiers-are-not-transformed) as the module specifier in the input file, this is the only process that accomplishes our two goals of validating output files and assigning types.
+
+### The role of declaration files
