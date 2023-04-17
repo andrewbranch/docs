@@ -94,7 +94,7 @@ graph TD
     A[Importing module] -- specified behavior --> B[Imported module]
   end
   A -. unspecified behavior .-> E
-  C .->|"`<span style='font-size: 3em'>❓🤷🏻‍♂️❓</span>`"| E
+  C .->|"<span style='font-size: 3em'>❓🤷🏻‍♂️❓</span>"| E
 ```
 
 Even if transpiler authors did nothing, a behavior would emerge from the existing semantics between the `require` calls they emitted in transpiled code and the `module.exports` defined in existing CJS modules. And to allow users to transition seamlessly from transpiled ESM to true ESM once their runtime supported it, that behavior would have to match the one the runtime chose to implement.
