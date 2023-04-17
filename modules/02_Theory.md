@@ -100,8 +100,7 @@ The available `module` settings are
 - **`es2020`**: Adds support for `import.meta` and `export * as ns from "mod"` to `es2015`.
 - **`es2022`**: Adds support for top-level `await` to `es2020`.
 - **`esnext`**: Currently identical to `es2022`, but will be a moving target reflecting the latest ECMAScript specifications, as well as module-related Stage 3+ proposals that are expected to be included in upcoming specification versions.
-
-[TODO: list the other modes here]
+- **`commonjs`, `system`, `amd`, and `umd`**: Each emits everything in the non-standard module system named, and assumes everything can be successfully imported into that module system. These are no longer recommended for new projects and will not be covered by this documentation.
 
 > Node’s rules for module kind detection and interoperability make it incorrect to specify `module` as `esnext` or `commonjs` for projects that run in Node, even if all files emitted by `tsc` are ESM or CJS, respectively. The only correct `module` settings for projects that intend to run in Node are `node16` and `nodenext`, because these are the only settings that encode these rules. While the emitted JavaScript for an all-ESM Node project might look identical between compilations using `esnext` and `nodenext`, the type checking can differ. [TODO: link to more info on `nodenext`]
 
@@ -121,7 +120,7 @@ When the `module` compiler option is set to `node16` or `nodenext`, TypeScript a
 | `/node_modules/pkg/index.d.ts`   |                        |                  | ESM         | `"type": "module"` in `package.json`    |
 | `/node_modules/pkg/index.d.cts`  |                        |                  | CJS         | File extension                          |
 
-When the input file extension is `.mts` or `.cts`, TypeScript knows to treat that file as an ES module or CJS module, respectively, because Node will have the same interpretation of the corresponding output file due to its `.mjs` or `.cjs` extension. When the input file extension is `.ts`, TypeScript has to consult the nearest `package.json` file to determine the module kind, because this is what Node will do when it encounters the output `.js` file. Notice that the same rules apply to the `.d.cts` and `.d.ts` declaration files in the `pkg` dependency: though they will not produce an output file as part of this compilation, the presence of a `.d.ts` file _implies_ the existence of a corresponding `.js` file—perhaps created when the author of the `pkg` library ran `tsc` on an input `.ts` file of their own—which Node must interpret as an ES module, due to its `.js` extension and the presence of the `"type": "module"` field in `/node_modules/pkg/package.json`.
+When the input file extension is `.mts` or `.cts`, TypeScript knows to treat that file as an ES module or CJS module, respectively, because Node will have the same interpretation of the corresponding output file due to its `.mjs` or `.cjs` extension. When the input file extension is `.ts`, TypeScript has to consult the nearest `package.json` file to determine the module kind, because this is what Node will do when it encounters the output `.js` file. (Notice that the same rules apply to the `.d.cts` and `.d.ts` declaration files in the `pkg` dependency: though they will not produce an output file as part of this compilation, the presence of a `.d.ts` file _implies_ the existence of a corresponding `.js` file—perhaps created when the author of the `pkg` library ran `tsc` on an input `.ts` file of their own—which Node must interpret as an ES module, due to its `.js` extension and the presence of the `"type": "module"` field in `/node_modules/pkg/package.json`. Declaration files are covered in more detail in a [later section](#the-role-of-declaration-files).)
 
 The detected module kind of input files is used by TypeScript to ensure it emits the output syntax that Node expects in each output file. If TypeScript were to emit `/example.js` with `import` and `export` statements in it, Node would crash when parsing the file. If TypeScript were to emit `/main.mjs` with `require` calls, Node would crash during evaluation. Beyond emit, the module kind is also used to determine rules for type checking and module resolution, which we’ll discuss in the following sections.
 
@@ -161,14 +160,10 @@ depending on the `module` compiler option (and any applicable [module kind detec
 Can an ES module `import` a CommonJS module? If so, does a default import select `module.exports` or `module.exports.default`? Can a CommonJS module `require` an ES module? CommonJS isn’t part of the ECMAScript specification, so runtimes, bundlers, and transpilers have been free to make up their own answers to these questions since ESM was standardized in 2015. Today, interoperability rules between ESM and CJS for most runtimes and bundlers broadly fall into one of three categories:
 
 1. **ESM-only.** Some runtimes, like browser engines, only support what’s actually a part of the language: ECMAScript Modules.
-2. **Bundler-like.** Before any major JavaScript engine could run ES modules, Babel allowed developers to write them by transpiling them to CommonJS. The way these ESM-transpiled-to-CJS files (indicated with an `__esModule` property on `module.exports`) interacted with hand-written-CJS files implied a set of permissive interoperability rules that have become the de facto standard for bundlers and transpilers.
+2. **Bundler-like.** Before any major JavaScript engine could run ES modules, Babel allowed developers to write them by transpiling them to CommonJS. The way these ESM-transpiled-to-CJS files interacted with hand-written-CJS files implied a set of permissive interoperability rules that have become the de facto standard for bundlers and transpilers.
 3. **Node.** In Node, CommonJS modules cannot load ES modules synchronously (with `require`); they can only load them asynchronously with dynamic `import()` calls. ES modules can default-import CJS modules, which always binds to `module.exports`. (This means that a default import of a Babel-like CJS output with `__esModule` behaves differently between Node and some bundlers.)
 
 TypeScript needs to know which of these rule sets to assume in order to provide correct types on (particularly `default`) imports and to error on imports that will crash at runtime. When the `module` compiler option is set to `node16` or `nodenext`, Node’s rules are enforced. All other settings assume bundler-like rules. (While using `--module esnext` does prevent you from _writing_ CommonJS modules, it does not prevent you from _importing_ them as dependencies. There’s currently no TypeScript setting that can guard against an ES module importing a CommonJS module, as would be appropriate for direct-to-browser code.)
-
-> #### `allowSyntheticDefaultImports` and `esModuleInterop`
->
-> [TODO]
 
 ### Module specifiers are not transformed
 
