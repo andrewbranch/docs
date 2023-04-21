@@ -13,9 +13,9 @@ export default "Hello, world!";
 How would you turn this into a CommonJS module? Recalling that default exports are just named exports with special syntax, there seems to be only one choice:
 
 ```ts
-module.exports.A = {};
-module.exports.B = {};
-module.exports.default = "Hello, world!";
+exports.A = {};
+exports.B = {};
+exports.default = "Hello, world!";
 ```
 
 This is a nice analog, and it lets you implement a similar on the importing side:
@@ -42,11 +42,11 @@ const mod = require("./module");
 console.log(mod.default, mod.A, mod.B);
 ```
 
-You might notice that in this scheme, there’s no way to write an ESM export that produces an output where `module.exports` is assigned a function, class, or primitive:
+You might notice that in this scheme, there’s no way to write an ESM export that produces an output where `exports` is assigned a function, class, or primitive:
 
 ```ts
 // @Filename: exports-function.js
-module.exports = function hello() {
+exports = function hello() {
   console.log("Hello, world!");
 };
 ```
@@ -98,7 +98,7 @@ graph TD
   C .->|"<span style='font-size: 3em'>❓🤷🏻‍♂️❓</span>"| E
 ```
 
-Even if transpiler authors did nothing, a behavior would emerge from the existing semantics between the `require` calls they emitted in transpiled code and the `module.exports` defined in existing CJS modules. And to allow users to transition seamlessly from transpiled ESM to true ESM once their runtime supported it, that behavior would have to match the one the runtime chose to implement.
+Even if transpiler authors did nothing, a behavior would emerge from the existing semantics between the `require` calls they emitted in transpiled code and the `exports` defined in existing CJS modules. And to allow users to transition seamlessly from transpiled ESM to true ESM once their runtime supported it, that behavior would have to match the one the runtime chose to implement.
 
 Guessing what interop behavior runtimes would support wasn’t limited to ESM importing “true CJS” modules either. Whether ESM would be able to recognize ESM-transpiled-from-CJS as distinct from CJS, and whether CJS would be able to `require` ES modules, were also unspecified. Even whether ESM imports would use the same module resolution algorithm as CJS `require` calls was unknowable. All these variables would have to be predicted correctly in order to give transpiler users a seamless migration path toward native ESM.
 
@@ -116,7 +116,7 @@ const hello = require("./exports-function");
 hello();
 ```
 
-When TypeScript first added support for writing and transpiling ES modules, the compiler addressed this problem by issuing an error on any namespace import of a module whose `module.exports` was not a namespace-like object:
+When TypeScript first added support for writing and transpiling ES modules, the compiler addressed this problem by issuing an error on any namespace import of a module whose `exports` was not a namespace-like object:
 
 ```ts
 import * as hello from "./exports-function";
@@ -133,18 +133,30 @@ import hello = require("./exports-function");
 
 Forcing users to revert to non-ESM syntax was essentially an admission that “we don’t know how or if a CJS module like `"./exports-function"` will be accessible with ESM imports in the future, but we know it _can’t_ be with `import *`, even though it will work at runtime in the transpilation scheme we’re using.” It doesn’t meet the goal of allowing this file to be migrated to real ESM without changes, but neither does the alternative of allowing the `import *` to link to a function. This is still the behavior in TypeScript today when `allowSyntheticDefaultImports` and `esModuleInterop` are disabled.
 
-Meanwhile, other transpilers were trying to solve the same problem. The thought process went something like this:
+> Unfortunately, this is a slight oversimplification—TypeScript didn’t fully avoid the compliance issue with this error, because it allowed namespace imports of functions to work, and retain their call signatures, as long as the function declaration merged with a namespace declaration—even if the namespace was empty. So while a module exporting a bare function was recognized as a “non-module entity”:
+> ```ts
+> declare function $(selector: string): any;
+> export = $; // Cannot `import *` this 👍
+> ```
+> A should-be-meaningless change allowed the invalid import to type check without errors:
+> ```ts
+> declare namespace $ {}
+> declare function $(selector: string): any;
+> export = $; // Allowed to `import *` this and call it 😱
+> ```
+
+Meanwhile, other transpilers were coming up with a way to solve the same problem. The thought process went something like this:
 
 1. To import a CJS module that exports a function or a primitive, we clearly need to use a default import. A namespace import would be illegal, and named imports don’t make sense here.
-2. Most likely, this means that runtimes implementing ESM/CJS interop will choose to make default imports of CJS modules _always_ link directly to the whole `module.exports`, rather than only doing so if the `module.exports` is a function or primitive.
-3. So, a default import of a true CJS module should work just like a `require` call. But we’ll need a way to disambiguate true CJS modules from our transpiled CJS modules, so we can still transpile `export default "hello"` to `module.exports.default = "hello"` and have a default import of _that_ module link to `module.exports.default`. Basically, a default import of one of our own transpiled modules needs to work one way (to simulate ESM-to-ESM imports), while a default import of any other existing CJS module needs to work another way (to simulate how we think ESM-to-CJS imports will work).
+2. Most likely, this means that runtimes implementing ESM/CJS interop will choose to make default imports of CJS modules _always_ link directly to the whole `exports`, rather than only doing so if the `exports` is a function or primitive.
+3. So, a default import of a true CJS module should work just like a `require` call. But we’ll need a way to disambiguate true CJS modules from our transpiled CJS modules, so we can still transpile `export default "hello"` to `exports.default = "hello"` and have a default import of _that_ module link to `exports.default`. Basically, a default import of one of our own transpiled modules needs to work one way (to simulate ESM-to-ESM imports), while a default import of any other existing CJS module needs to work another way (to simulate how we think ESM-to-CJS imports will work).
 4. When we transpile an ES module to CJS, let’s add a special extra field to the output:
    ```ts
-   module.exports.A = {};
-   module.exports.B = {};
-   module.exports.default = "Hello, world!";
+   exports.A = {};
+   exports.B = {};
+   exports.default = "Hello, world!";
    // Extra special flag!
-   module.exports.__esModule = true;
+   exports.__esModule = true;
    ```
    that we can check for when we transpile a default import:
    ```ts
@@ -152,6 +164,19 @@ Meanwhile, other transpilers were trying to solve the same problem. The thought 
    const _mod = require("./module");
    const hello = _mod.__esModule ? _mod.default : _mod;
    ```
+
+The `__esModule` flag first appeared in Traceur, then in Babel and SystemJS shortly after. TypeScript added the `allowSyntheticDefaultImports` to allow the type checker to link default imports directly to the `exports`, rather than the `exports.default`, of any module types that lacked an `export default` declaration. The flag didn’t modify how imports or exports were emitted, but it allowed default imports to reflect how other transpilers would treat them. Namely, it allowed a default import to be used to resolve to “non-module entities,” where `import *` was an error:
+
+```ts
+// Error:
+import * as hello from "./exports-function";
+
+// Old workaround:
+import hello = require("./exports-function");
+
+// New way, with `allowSyntheticDefaultImports`:
+import hello from "./exports-function";
+```
 
 <!--
 
@@ -178,5 +203,8 @@ https://github.com/babel/babel/issues/95
 https://github.com/nodejs/node/pull/16675
 https://github.com/google/traceur-compiler/pull/785#issuecomment-35633727
 https://github.com/microsoft/TypeScript/pull/2460
+https://github.com/systemjs/systemjs/commit/3b3b03a4b8ffc0f71fab263ef9d5c70f0adc5339
+https://github.com/microsoft/TypeScript/pull/5577
+
 
 -->

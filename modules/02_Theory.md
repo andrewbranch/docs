@@ -33,17 +33,17 @@ Any system that solves this problem by giving files their own scope while still 
 > console.log(a); // 'Hello from a.js'
 > ```
 >
-> CommonJS (CJS) is the module system that originally shipped in Node, before ESM was part of the language specification. It’s still supported in Node alongside ESM. It uses plain JavaScript objects and functions named `module` and `require`:
+> CommonJS (CJS) is the module system that originally shipped in Node, before ESM was part of the language specification. It’s still supported in Node alongside ESM. It uses plain JavaScript objects and functions named `exports` and `require`:
 >
 > ```js
 > // a.js
-> module.exports = "Hello from a.js";
+> exports.message = "Hello from a.js";
 > ```
 >
 > ```js
 > // b.js
 > const a = require("./a");
-> console.log(a); // 'Hello from a.js'
+> console.log(a.message); // 'Hello from a.js'
 > ```
 
 Accordingly, when TypeScript detects that a file is a CommonJS or ECMAScript module, it starts by assuming that file will have its own scope. Beyond that, though, the compiler’s job gets a little more complicated.
@@ -157,11 +157,11 @@ depending on the `module` compiler option (and any applicable [module kind detec
 
 ### ESM and CJS interoperability
 
-Can an ES module `import` a CommonJS module? If so, does a default import select `module.exports` or `module.exports.default`? Can a CommonJS module `require` an ES module? CommonJS isn’t part of the ECMAScript specification, so runtimes, bundlers, and transpilers have been free to make up their own answers to these questions since ESM was standardized in 2015. Today, interoperability rules between ESM and CJS for most runtimes and bundlers broadly fall into one of three categories:
+Can an ES module `import` a CommonJS module? If so, does a default import select `exports` or `exports.default`? Can a CommonJS module `require` an ES module? CommonJS isn’t part of the ECMAScript specification, so runtimes, bundlers, and transpilers have been free to make up their own answers to these questions since ESM was standardized in 2015. Today, interoperability rules between ESM and CJS for most runtimes and bundlers broadly fall into one of three categories:
 
 1. **ESM-only.** Some runtimes, like browser engines, only support what’s actually a part of the language: ECMAScript Modules.
 2. **Bundler-like.** Before any major JavaScript engine could run ES modules, Babel allowed developers to write them by transpiling them to CommonJS. The way these ESM-transpiled-to-CJS files interacted with hand-written-CJS files implied a set of permissive interoperability rules that have become the de facto standard for bundlers and transpilers.
-3. **Node.** In Node, CommonJS modules cannot load ES modules synchronously (with `require`); they can only load them asynchronously with dynamic `import()` calls. ES modules can default-import CJS modules, which always binds to `module.exports`. (This means that a default import of a Babel-like CJS output with `__esModule` behaves differently between Node and some bundlers.)
+3. **Node.** In Node, CommonJS modules cannot load ES modules synchronously (with `require`); they can only load them asynchronously with dynamic `import()` calls. ES modules can default-import CJS modules, which always binds to `exports`. (This means that a default import of a Babel-like CJS output with `__esModule` behaves differently between Node and some bundlers.)
 
 TypeScript needs to know which of these rule sets to assume in order to provide correct types on (particularly `default`) imports and to error on imports that will crash at runtime. When the `module` compiler option is set to `node16` or `nodenext`, Node’s rules are enforced. All other settings assume bundler-like rules. (While using `--module esnext` does prevent you from _writing_ CommonJS modules, it does not prevent you from _importing_ them as dependencies. There’s currently no TypeScript setting that can guard against an ES module importing a CommonJS module, as would be appropriate for direct-to-browser code.)
 
