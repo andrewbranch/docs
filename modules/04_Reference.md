@@ -165,7 +165,7 @@ Meanwhile, other transpilers were coming up with a way to solve the same problem
    const hello = _mod.__esModule ? _mod.default : _mod;
    ```
 
-The `__esModule` flag first appeared in Traceur, then in Babel and SystemJS shortly after. TypeScript added the `allowSyntheticDefaultImports` to allow the type checker to link default imports directly to the `exports`, rather than the `exports.default`, of any module types that lacked an `export default` declaration. The flag didn’t modify how imports or exports were emitted, but it allowed default imports to reflect how other transpilers would treat them. Namely, it allowed a default import to be used to resolve to “non-module entities,” where `import *` was an error:
+The `__esModule` flag first appeared in Traceur, then in Babel, SystemJS, and Webpack shortly after. TypeScript added the `allowSyntheticDefaultImports` in 1.8 to allow the type checker to link default imports directly to the `exports`, rather than the `exports.default`, of any module types that lacked an `export default` declaration. The flag didn’t modify how imports or exports were emitted, but it allowed default imports to reflect how other transpilers would treat them. Namely, it allowed a default import to be used to resolve to “non-module entities,” where `import *` was an error:
 
 ```ts
 // Error:
@@ -178,25 +178,34 @@ import hello = require("./exports-function");
 import hello from "./exports-function";
 ```
 
+This was usually enough to let Babel and Webpack users write code that already worked in those systems without TypeScript complaining, but it was only a partial solution, leaving a few issues unsolved:
+
+1. Babel and others varied their default import behavior on whether an `__esModule` property was found on the target module, but `allowSyntheticDefaultImports` only enabled a _fallback_ behavior when no default export was found in the target module’s types. This created an inconsistency if the target module had an `__esModule` flag but _no_ default export. Transpilers and bundlers would still link a default import of such a module to its `exports.default`, which would be `undefined`, and would ideally be an error in TypeScript, since real ESM imports cause errors if they can’t be linked. But with `allowSyntheticDefaultImports`, TypeScript would think a default import of such an import links to the whole `exports` object, allowing named exports to be accessed as its properties.
+2. `allowSyntheticDefaultImports` didn’t change how namespace imports were typed, creating an odd inconsistency both could be used and would have the same type:
+   ```ts
+   // @Filename: exportEqualsObject.d.ts
+   declare const obj: { a: string, b: string };
+   export = obj;
+
+   // @Filename: main.ts
+   import objDefault from "./exportEqualsObject";
+   import * as objNamespace from "./exportEqualsObject";
+
+   // All good?
+   console.log(objDefault.a, objDefault.b, objNamespace.a, objNamespace.b);
+
+   objNamespace.default === objDefault;
+   //           ^^^^^^^ Property 'default' does not exist on type 'typeof import("./exportEqualsObject")'.
+   //
+   // True at runtime though 🤔
+   ```
+3. Most importantly, `allowSyntheticDefaultImports` did not change the JavaScript emitted by `tsc`. So while the flag enabled more accurate checking as long as the code was fed into another tool like Babel or Webpack, it created a real danger for users who were emitting `--module commonjs` with `tsc` and running in Node. If they encountered an error with `import *`, it may have appeared as if enabling `allowSyntheticDefaultImports` would fix it, but in fact it only silenced the build-time error while emitting code that would crash in Node.
+
+TypeScript introduced the `esModuleInterop` flag in 2.7, which refined the type checking of imports to address the remaining inconsistencies between TypeScript’s analysis and the interop behavior used in existing transpilers and bundlers, and critically, adopted the same `__esModule`-conditional CommonJS emit that transpilers had adopted years before. (Another new emit helper for `import *` ensured the result was always an object, with call signatures stripped, fully resolving the specification compliance issue that the aforementioned “resolves to a non-module entity” error didn’t quite sidestep.) Finally, with the new flag enabled, TypeScript’s type checking, TypeScript’s emit, and the rest of the transpiling and bundling ecosystem were in agreement on a CJS/ESM interop scheme that was spec-legal and plausibly adoptable by Node.
+
+#### What Node actually did
+
 <!--
-
-
-Fairly quickly, transpilers more or less converged on a consensus interop strategy, which (spoiler alert) turned out not to be a very close match for the interop strategy implemented by Node when it released support for ESM in v12. However, the consensus strategy continues to be used by transpilers, bundlers, experimental Node loaders, and some other runtimes.
-
----
-
-Unfortunately, this is TypeScript’s default behavior—the behavior when `esModuleInterop` is disabled. To sidestep the `import *` specification compliance issue, TypeScript simply issues an error on namespace imports when the target module’s `module.exports` is not a namespace-like object:
-
-```ts
-import * as hello from "./exports-function";
-// TS2497              ^^^^^^^^^^^^^^^^^^^^
-// Original message:
-//   External module '"./exports-function"' resolves to a non-module entity
-//   and cannot be imported using this construct.
-// Today’s message:
-//   This module can only be referenced with ECMAScript imports/exports by
-//   turning on the 'esModuleInterop' flag and referencing its default export.
-```
 
 https://github.com/babel/babel/issues/493
 https://github.com/babel/babel/issues/95
@@ -205,6 +214,7 @@ https://github.com/google/traceur-compiler/pull/785#issuecomment-35633727
 https://github.com/microsoft/TypeScript/pull/2460
 https://github.com/systemjs/systemjs/commit/3b3b03a4b8ffc0f71fab263ef9d5c70f0adc5339
 https://github.com/microsoft/TypeScript/pull/5577
-
+https://github.com/microsoft/TypeScript/pull/19675
+https://github.com/microsoft/TypeScript/issues/16093
 
 -->
