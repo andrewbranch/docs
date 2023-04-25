@@ -181,35 +181,58 @@ import hello from "./exports-function";
 This was usually enough to let Babel and Webpack users write code that already worked in those systems without TypeScript complaining, but it was only a partial solution, leaving a few issues unsolved:
 
 1. Babel and others varied their default import behavior on whether an `__esModule` property was found on the target module, but `allowSyntheticDefaultImports` only enabled a _fallback_ behavior when no default export was found in the target module’s types. This created an inconsistency if the target module had an `__esModule` flag but _no_ default export. Transpilers and bundlers would still link a default import of such a module to its `exports.default`, which would be `undefined`, and would ideally be an error in TypeScript, since real ESM imports cause errors if they can’t be linked. But with `allowSyntheticDefaultImports`, TypeScript would think a default import of such an import links to the whole `exports` object, allowing named exports to be accessed as its properties.
-2. `allowSyntheticDefaultImports` didn’t change how namespace imports were typed, creating an odd inconsistency both could be used and would have the same type:
+2. `allowSyntheticDefaultImports` didn’t change how namespace imports were typed, creating an odd inconsistency where both could be used and would have the same type:
    ```ts
    // @Filename: exportEqualsObject.d.ts
-   declare const obj: { a: string, b: string };
+   declare const obj: object;
    export = obj;
 
    // @Filename: main.ts
    import objDefault from "./exportEqualsObject";
    import * as objNamespace from "./exportEqualsObject";
 
-   // All good?
-   console.log(objDefault.a, objDefault.b, objNamespace.a, objNamespace.b);
-
+   // This should be true at runtime, but TypeScript gives an error:
    objNamespace.default === objDefault;
    //           ^^^^^^^ Property 'default' does not exist on type 'typeof import("./exportEqualsObject")'.
-   //
-   // True at runtime though 🤔
    ```
 3. Most importantly, `allowSyntheticDefaultImports` did not change the JavaScript emitted by `tsc`. So while the flag enabled more accurate checking as long as the code was fed into another tool like Babel or Webpack, it created a real danger for users who were emitting `--module commonjs` with `tsc` and running in Node. If they encountered an error with `import *`, it may have appeared as if enabling `allowSyntheticDefaultImports` would fix it, but in fact it only silenced the build-time error while emitting code that would crash in Node.
 
-TypeScript introduced the `esModuleInterop` flag in 2.7, which refined the type checking of imports to address the remaining inconsistencies between TypeScript’s analysis and the interop behavior used in existing transpilers and bundlers, and critically, adopted the same `__esModule`-conditional CommonJS emit that transpilers had adopted years before. (Another new emit helper for `import *` ensured the result was always an object, with call signatures stripped, fully resolving the specification compliance issue that the aforementioned “resolves to a non-module entity” error didn’t quite sidestep.) Finally, with the new flag enabled, TypeScript’s type checking, TypeScript’s emit, and the rest of the transpiling and bundling ecosystem were in agreement on a CJS/ESM interop scheme that was spec-legal and plausibly adoptable by Node.
+TypeScript introduced the `esModuleInterop` flag in 2.7, which refined the type checking of imports to address the remaining inconsistencies between TypeScript’s analysis and the interop behavior used in existing transpilers and bundlers, and critically, adopted the same `__esModule`-conditional CommonJS emit that transpilers had adopted years before. (Another new emit helper for `import *` ensured the result was always an object, with call signatures stripped, fully resolving the specification compliance issue that the aforementioned “resolves to a non-module entity” error didn’t quite sidestep.) Finally, with the new flag enabled, TypeScript’s type checking, TypeScript’s emit, and the rest of the transpiling and bundling ecosystem were in agreement on a CJS/ESM interop scheme that was spec-legal and, perhaps, plausibly adoptable by Node.
 
-#### What Node actually did
+#### Interop in Node
+
+Node shipped its support for ES modules unflagged in v12. Like the bundlers and transpilers began doing years before, Node gave CommonJS modules a “synthetic default export” of their `exports` object, allowing the entire module contents to be accessed with a default import from ESM:
+
+```ts
+// @Filename: export.cjs
+exports = { hello: "world" };
+
+// @Filename: import.mjs
+import greeting from "./export.cjs";
+greeting.hello; // "world"
+```
+
+That’s one win for seamless migration! Unfortunately, the similarities mostly stop there. Node wasn’t able to respect the `__esModule` marker to vary its default import behavior. So a transpiled module with a “default export” behaves one way when “imported” by another transpiled module, and another way when imported by a true ES module in Node:
+
+```ts
+// @Filename: node_modules/dep/index.js
+exports.__esModule = true;
+exports.default = function doSomething() { /*...*/ }
+
+// @Filename: transpile-vs-run-directly.{js/mjs}
+import doSomething from "dep";
+doSomething();         // ✅ Works after transpilation          | 💥 Not a function in Node ESM!
+doSomething.default(); // 💥 Doesn't exist after trasnpilation! | ✅ Works in Node ESM  
+```
+
+While the transpiled default import only makes the synthetic default export if the target module lacks an `__esModule` flag, Node _always_ synthesizes a default export.
 
 <!--
 
 https://github.com/babel/babel/issues/493
 https://github.com/babel/babel/issues/95
 https://github.com/nodejs/node/pull/16675
+https://github.com/nodejs/ecmascript-modules/pull/31
 https://github.com/google/traceur-compiler/pull/785#issuecomment-35633727
 https://github.com/microsoft/TypeScript/pull/2460
 https://github.com/systemjs/systemjs/commit/3b3b03a4b8ffc0f71fab263ef9d5c70f0adc5339
