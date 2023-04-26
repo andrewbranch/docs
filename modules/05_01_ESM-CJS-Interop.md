@@ -1,6 +1,4 @@
-## Module emit and checking
-
-### ESM/CJS Interoperability
+# ESM/CJS Interoperability
 
 It’s 2015, and you’re writing an ESM-to-CJS transpiler. There’s no specification for how to do this; all you have is a specification of how ES modules are supposed to interact with each other, knowledge of how CommonJS modules interact with each other, and a knack for figuring things out. Consider an exporting ES module:
 
@@ -102,7 +100,7 @@ Even if transpiler authors did nothing, a behavior would emerge from the existin
 
 Guessing what interop behavior runtimes would support wasn’t limited to ESM importing “true CJS” modules either. Whether ESM would be able to recognize ESM-transpiled-from-CJS as distinct from CJS, and whether CJS would be able to `require` ES modules, were also unspecified. Even whether ESM imports would use the same module resolution algorithm as CJS `require` calls was unknowable. All these variables would have to be predicted correctly in order to give transpiler users a seamless migration path toward native ESM.
 
-#### `allowSyntheticDefaultImports` and `esModuleInterop`
+## `allowSyntheticDefaultImports` and `esModuleInterop`
 
 Let’s return to our specification compliance problem, where `import *` transpiles to `require`:
 
@@ -199,9 +197,9 @@ This was usually enough to let Babel and Webpack users write code that already w
 
 TypeScript introduced the `esModuleInterop` flag in 2.7, which refined the type checking of imports to address the remaining inconsistencies between TypeScript’s analysis and the interop behavior used in existing transpilers and bundlers, and critically, adopted the same `__esModule`-conditional CommonJS emit that transpilers had adopted years before. (Another new emit helper for `import *` ensured the result was always an object, with call signatures stripped, fully resolving the specification compliance issue that the aforementioned “resolves to a non-module entity” error didn’t quite sidestep.) Finally, with the new flag enabled, TypeScript’s type checking, TypeScript’s emit, and the rest of the transpiling and bundling ecosystem were in agreement on a CJS/ESM interop scheme that was spec-legal and, perhaps, plausibly adoptable by Node.
 
-#### Interop in Node
+## Interop in Node
 
-Node shipped its support for ES modules unflagged in v12. Like the bundlers and transpilers began doing years before, Node gave CommonJS modules a “synthetic default export” of their `exports` object, allowing the entire module contents to be accessed with a default import from ESM:
+Node shipped support for ES modules unflagged in v12. Like the bundlers and transpilers began doing years before, Node gave CommonJS modules a “synthetic default export” of their `exports` object, allowing the entire module contents to be accessed with a default import from ESM:
 
 ```ts
 // @Filename: export.cjs
@@ -212,20 +210,84 @@ import greeting from "./export.cjs";
 greeting.hello; // "world"
 ```
 
-That’s one win for seamless migration! Unfortunately, the similarities mostly stop there. Node wasn’t able to respect the `__esModule` marker to vary its default import behavior. So a transpiled module with a “default export” behaves one way when “imported” by another transpiled module, and another way when imported by a true ES module in Node:
+That’s one win for seamless migration! Unfortunately, the similarities mostly end there.
+
+### No `__esModule` detection (the “double default” problem)
+
+Node wasn’t able to respect the `__esModule` marker to vary its default import behavior. So a transpiled module with a “default export” behaves one way when “imported” by another transpiled module, and another way when imported by a true ES module in Node:
 
 ```ts
-// @Filename: node_modules/dep/index.js
+// @Filename: node_modules/dependency/index.js
 exports.__esModule = true;
 exports.default = function doSomething() { /*...*/ }
 
 // @Filename: transpile-vs-run-directly.{js/mjs}
-import doSomething from "dep";
-doSomething();         // ✅ Works after transpilation          | 💥 Not a function in Node ESM!
-doSomething.default(); // 💥 Doesn't exist after trasnpilation! | ✅ Works in Node ESM  
+import doSomething from "dependency";
+// Works after transpilation, but not a function in Node ESM:
+doSomething();
+// Doesn't exist after trasnpilation, but works in Node ESM:
+doSomething.default();
 ```
 
-While the transpiled default import only makes the synthetic default export if the target module lacks an `__esModule` flag, Node _always_ synthesizes a default export.
+While the transpiled default import only makes the synthetic default export if the target module lacks an `__esModule` flag, Node _always_ synthesizes a default export, creating a “double default” on the transpiled module.
+
+### Unreliable named exports
+
+In addition to making a CommonJS module’s `exports` object available as a default import, Node attempts to find properties of `exports` to make available as named imports. This behavior matches bundlers and transpilers when it works; however, Node uses [syntactic analysis](https://github.com/nodejs/cjs-module-lexer) to synthesize named exports before any code executes, whereas transpiled modules resolve their named imports at runtime. The result is that imports from CJS modules that work in transpiled modules may not work in Node:
+
+```ts
+// @Filename: named-exports.cjs
+exports.hello = "world";
+exports["worl" + "d"] = "hello";
+
+// @Filename: transpile-vs-run-directly.{js/mjs}
+import { hello, world } from "./named-exports.cjs";
+// `hello` works, but `world` is missing in Node 💥
+
+import mod from "./named-exports.cjs";
+mod.world;
+// Accessing properties from the default always works ✅
+```
+
+### Cannot `require` a true ES module
+
+True CommonJS modules can `require` an ESM-transpiled-to-CJS module, since they’re both CommonJS at runtime. But in Node, `require` crashes if it resolves to an ES module. This means published libraries cannot migrate from transpiled modules to true ESM without breaking their CommonJS (true or transpiled) consumers:
+
+```ts
+// @Filename: node_modules/dependency/index.js
+export function doSomething() { /* ... */ }
+
+// @Filename: dependent.js
+import { doSomething } from "dependency";
+// ✅ Works if dependent and dependency are both transpiled
+// ✅ Works if dependent and dependency are both true ESM
+// ✅ Works if dependent is true ESM and dependency is transpiled
+// 💥 Crashes if dependent is transpiled and dependency is true ESM
+```
+
+### Different module resolution algorithms
+
+Node introduced a new module resolution algorithm for resolving ESM imports that differed significantly from the long-standing algorithm for resolving `require` calls. While not directly related to interop between CJS and ES modules, this difference was one more reason why a seamless migration from transpiled modules to true ESM might not be possible:
+
+```ts
+// @Filename: add.js
+export function add(a, b) {
+  return a + b;
+}
+
+// @Filename: math.js
+export * from "./add";
+//            ^^^^^^^
+// Works when transpiled to CJS,
+// but would have to be "./add.js"
+// in Node ESM.
+```
+
+## Summary
+
+TODO:
+- writing portable code?
+- should you use `esModuleInterop`?
 
 <!--
 

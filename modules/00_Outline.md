@@ -79,3 +79,5 @@
          1. `rootDirs`
          1. `typeRoots`
          1. `moduleSuffixes`
+1. Appendices
+   1. ESM/CJS Interoperability
