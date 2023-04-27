@@ -46,38 +46,30 @@
       1. CJS in TypeScript
       1. Type-only imports and exports
       1. Ambient module declarations & augmentations?
-   1. Module emit and checking
-      1. `module`
-         1. `commonjs`
-         1. `es2015`+
-         1. `node16`/`nodenext`
-      1. CJS/ESM interop details
-        1. The `default` problem
-        1. `__esModule` marker
-        1. `allowSyntheticDefaultExports`
-        1. `esModuleInterop`
-      1. `verbatimModuleSyntax`
-   1. Module resolution
-      1. `moduleResolution`
-         1. `node16`/`nodenext`
-         1. `bundler`
-      1. `allowJs` and `maxNodeModuleJsDepth`
-      1. package.json
-         1. `"main"`, `"types"`
-         1. `"typesVersions"`
-         1. `"exports"`
-         1. `"type"`
-         1. `"imports"`
-      1. Customization compiler options
-         1. `paths`
-         1. `baseUrl`
-         1. `resolvePackageJsonImports`
-         1. `resolvePackageJsonExports`
-         1. `customConditions`
-         1. `allowImportingTsExtensions`
-         1. `resolveJsonModule`
-         1. `rootDirs`
-         1. `typeRoots`
-         1. `moduleSuffixes`
+    1. `module`
+       1. `commonjs`
+       1. `es2015`+
+       1. `node16`/`nodenext`
+    1. `moduleResolution`
+       1. `node16`/`nodenext`
+       1. `bundler`
+    1. `allowJs` and `maxNodeModuleJsDepth`
+    1. package.json
+       1. `"main"`, `"types"`
+       1. `"typesVersions"`
+       1. `"exports"`
+       1. `"type"`
+       1. `"imports"`
+    1. Customization compiler options
+       1. `paths`
+       1. `baseUrl`
+       1. `resolvePackageJsonImports`
+       1. `resolvePackageJsonExports`
+       1. `customConditions`
+       1. `allowImportingTsExtensions`
+       1. `resolveJsonModule`
+       1. `rootDirs`
+       1. `typeRoots`
+       1. `moduleSuffixes`
 1. Appendices
    1. ESM/CJS Interoperability
