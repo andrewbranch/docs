@@ -44,7 +44,7 @@ You might notice that in this scheme, there’s no way to write an ESM export th
 
 ```ts
 // @Filename: exports-function.js
-exports = function hello() {
+module.exports = function hello() {
   console.log("Hello, world!");
 };
 ```
@@ -63,7 +63,7 @@ hello();
 
 Our output works at runtime, but we have a compliance problem: according to the JavaScript specification, a namespace import always resolves to a [_Module Namespace Object_](https://tc39.es/ecma262/#sec-module-namespace-objects), that is, an object whose members are the exports of the module. In this case, `require` would return the function `hello`, but `import *` can never return a function. The correspondence we assumed appears invalid.
 
-It’s worth taking a step back here and clarifying what the _goal_ is. As soon as modules landed in the ES2015 specification, transpilers emerged with support for downleveling ESM to CJS, allowing users to adopt the new syntax long before runtimes implemented support for it. There was even a sense that writing ESM code was a good way to “future-proof” new projects. For this to be true, there needed to be a seamless migration path from executing the transpilers’ CJS output to executing the ESM input natively once runtimes developed support for it. The goal was to find a way to downlevel ESM to CJS that would allow any or all of those transpiled outputs to be replaced by their inputs in a future runtime, with no observable change in behavior.
+It’s worth taking a step back here and clarifying what the _goal_ is. As soon as modules landed in the ES2015 specification, transpilers emerged with support for downleveling ESM to CJS, allowing users to adopt the new syntax long before runtimes implemented support for it. There was even a sense that writing ESM code was a good way to “future-proof” new projects. For this to be true, there needed to be a seamless migration path from executing the transpilers’ CJS output to executing the ESM input natively once runtimes developed support for it. The goal was to find a way to downlevel ESM to CJS that would allow any or all of those transpiled outputs to be replaced by their true ESM inputs in a future runtime, with no observable change in behavior.
 
 By following the specification, it was easy enough for transpilers to find a set of transformations that made the semantics of their transpiled CommonJS outputs match the specified semantics of their ESM inputs (arrows represent imports):
 
@@ -203,7 +203,7 @@ Node shipped support for ES modules unflagged in v12. Like the bundlers and tran
 
 ```ts
 // @Filename: export.cjs
-exports = { hello: "world" };
+module.exports = { hello: "world" };
 
 // @Filename: import.mjs
 import greeting from "./export.cjs";
@@ -283,11 +283,58 @@ export * from "./add";
 // in Node ESM.
 ```
 
-## Summary
+## Conclusions
 
-TODO:
-- writing portable code?
-- should you use `esModuleInterop`?
+Clearly, a seamless migration from transpiled modules to ESM isn’t possible, at least in Node. Where does this leave us?
+
+### Setting the right `module` compiler option is critical
+
+Since interoperability rules differ between hosts, TypeScript can’t offer correct checking behavior unless it understands what kind of module is represented by each file it sees, and what set of rules to apply to them. This is the purpose of the `module` compiler option. (In particular, code that is intended to run in Node is subject to stricter rules than code that will be processed by a bundler. The compiler’s output is not checked for Node compatibility unless `module` is set to `node16` or `nodenext`.)
+
+### Applications with CommonJS code should always enable `esModuleInterop`
+
+In a TypeScript _application_ (as opposed to a library that others may consume) where `tsc` is used to emit JavaScript files, whether `esModuleInterop` is enabled doesn’t have major consequences. The way you write imports for certain kinds of modules will change, but TypeScript’s checking and emit are in sync, so error-free code should be safe to run in either mode. The downside of leaving `esModuleInterop` disabled in this case is that it allows you to write JavaScript code with semantics that clearly violate the ECMASCript specification, confusing intuitions about namespace imports and making it harder to migrate to running ES modules in the future.
+
+In an application that gets processed by a third-party transpiler or bundler, on the other hand, enabling `esModuleInterop` is more important. All major bundlers and transpilers use an `esModuleInterop`-like emit strategy, so TypeScript needs to adjust its checking to match. (The compiler always reasons about what will happen in the JavaScript files that `tsc` would emit, so even if another tool is being used in place of `tsc`, emit-affecting compiler options should still be set to match the output of that tool as closely as possible.)
+
+`allowSyntheticDefaultImports` without `esModuleInterop` should be avoided. It changes the compiler’s checking behavior without changing the code emitted by `tsc`, allowing potentially unsafe JavaScript to be emitted. Additionally, the checking changes it introduces are an incomplete version of the ones introduced by `esModuleInterop`. Even if `tsc` isn’t being used for emit, it’s better to enable `esModuleInterop` than `allowSyntheticDefaultImports`.
+
+Some people object to the inclusion of the `__importDefault` and `__importStar` helper functions included in `tsc`’s JavaScript output when `esModuleInterop` is enabled, either because it marginally increases the output size on disk or because the interop algorithm employed by the helpers seems to misrepresent Node’s interop behavior by checking for `__esModule`, leading to the hazards discussed earlier. Both of these objections can be addressed, at least partially, without accepting the flawed checking behavior exhibited with `esModuleInterop` disabled. First, the `importHelpers` compiler option can be used to import the helper functions from `tslib` rather than inlining them into each file that needs them. To discuss the second objection, let’s look at a final example:
+
+```ts
+// @Filename: node_modules/transpiled-dependency/index.js
+exports.__esModule = true;
+exports.default = function doSomething() { /* ... */ };
+exports.something = "something";
+
+// @Filename: node_modules/true-cjs-dependency/index.js
+module.exports = function doSomethingElse() { /* ... */ };
+
+// @Filename: src/sayHello.ts
+export default function sayHello() { /* ... */ }
+export const hello = "hello";
+
+// @Filename: src/main.ts
+import doSomething from "transpiled-dependency";
+import doSomethingElse from "true-cjs-dependency";
+import sayHello from "./sayHello.js";
+```
+
+Assume we’re compiling `src` to CommonJS for use in Node. Without `allowSyntheticDefaultImports` or `esModuleInterop`, the import of `doSomethingElse` from `"true-cjs-dependency"` is an error, and the others are not. To fix the error without changing any compiler options, you could change the import to `import doSomethingElse = require("true-cjs-dependency")`. However, depending on how the types for the module (not shown) are written, you may also be able to write and call a namespace import, which would be a language-level specification violation. With `esModuleInterop`, none of the imports shown are errors (and all are callable), but the invalid namespace import would be caught.
+
+What would change if we decided to migrate `src` to true ESM in Node (say, add `"type": "module"` to our root package.json)? The first import, `doSomething` from `"transpiled-dependency"`, would no longer be callable—it exhibits the “double default” problem, where we’d have to call `doSomething.default()` rather than `doSomething()`. (TypeScript understands and catches this under `--module node16` and `nodenext`.) But notably, the _second_ import of `doSomethingElse`, which needed `esModuleInterop` to work when compiling to CommonJS, works fine in true ESM.
+
+If there’s something to complain about here, it’s not what `esModuleInterop` does with the second import. The changes it makes, both allowing the default import and preventing callable namespace imports, are exactly in line with Node’s real ESM/CJS interop strategy, and made migration to real ESM easier. The problem, if there is one, is that `esModuleInterop` seems to fail at giving us a seamless migration path for the _first_ import. But this problem was not introduced by enabling `esModuleInterop`; the first import was completely unaffected by it. Unfortunately, this problem cannot be solved without breaking the semantic contract between `main.ts` and `sayHello.ts`, because the CommonJS output of `sayHello.ts` looks structurally identical to `transpiled-dependency/index.js`. If `esModuleInterop` changed the way the transpiled import of `doSomething` works to be identical to the way it would work in Node ESM, it would change the behavior of the `sayHello` import in the same way, making the input code violate ESM semantics (thus still preventing the `src` directory from being migrated to ESM without changes).
+
+As we’ve seen, there is no seamless migration path from transpiled modules to true ESM. But `esModuleInterop` is one step in the right direction. For those who still prefer to minimize module syntax transformations and the inclusion of the import helper functions, enabling `verbatimModuleSyntax` is a better choice than disabling `esModuleInterop`. `verbatimModuleSyntax` enforces that the `import mod = require("mod")` and `export = ns` syntax be used in CommonJS-emitting files, avoiding all the kinds of import ambiguity we’ve discussed, at the cost of ease of migration to true ESM.
+
+### Library code needs special considerations
+
+[TODO]
+
+- `allowSyntheticDefaultImports` and `esModuleInterop` are infectious, but not always default for users
+- Checking under multiple configurations might be wise, `verbatimModuleSyntax` can help
+- Avoid shipping transpiled `export default` to npm
 
 <!--
 
@@ -301,5 +348,6 @@ https://github.com/systemjs/systemjs/commit/3b3b03a4b8ffc0f71fab263ef9d5c70f0adc
 https://github.com/microsoft/TypeScript/pull/5577
 https://github.com/microsoft/TypeScript/pull/19675
 https://github.com/microsoft/TypeScript/issues/16093
+https://github.com/nodejs/modules/issues/139
 
 -->
