@@ -330,11 +330,25 @@ As we’ve seen, there is no seamless migration path from transpiled modules to 
 
 ### Library code needs special considerations
 
-[TODO]
+Libraries (that ship declaration files) should take extra care to ensure the types they write are error-free under a wide range of compiler options. For example, it’s possible to write one interface that extends another in such a way that it only compiles successfully when `strictNullChecks` is disabled. If a library were to publish types like that, it would force all their users to disable `strictNullChecks` too. `esModuleInterop` can allow type declarations to contain similarly “infectious” default imports:
 
-- `allowSyntheticDefaultImports` and `esModuleInterop` are infectious, but not always default for users
-- Checking under multiple configurations might be wise, `verbatimModuleSyntax` can help
-- Avoid shipping transpiled `export default` to npm
+```ts
+// @Filename: /node_modules/dependency/index.d.ts
+import express from "express";
+declare function doSomething(req: express.Request): any;
+export = doSomething;
+```
+
+Suppose this default import _only_ works with `esModuleInterop` enabled, and is an error without. The user of this dependency should _probably_ enable `esModuleInterop` anyway, but it’s generally seen as bad form for libraries to make their configurations infectious like this. It would be much better for the library to ship a declaration file like:
+
+```ts
+import express = require("express");
+// ...
+```
+
+Examples like this have led to conventional wisdom that says libraries should _not_ enable `esModuleInterop`. This advice is a reasonable start, but we’ve looked at examples where the type of a namespace import changes, potentially _introducing_ an error, when enabling `esModuleInterop`. So whether libraries compile with or without `esModuleInterop`, they run the risk of writing syntax that makes their choice infectious.
+
+Library authors who want to go above and beyond to ensure maximum compatibility would do well to validate their declaration files against a matrix of compiler options. But using `verbatimModuleSyntax` completely sidesteps the issue with `esModuleInterop` by forcing CommonJS-emitting files to use CommonJS-style import and export syntax. Additionally, since `esModuleInterop` only affects CommonJS, so as more libraries move to ESM-only publishing over time, the relevance of this issue will decline.
 
 <!--
 
@@ -349,5 +363,6 @@ https://github.com/microsoft/TypeScript/pull/5577
 https://github.com/microsoft/TypeScript/pull/19675
 https://github.com/microsoft/TypeScript/issues/16093
 https://github.com/nodejs/modules/issues/139
+https://github.com/microsoft/TypeScript/issues/54212
 
 -->
