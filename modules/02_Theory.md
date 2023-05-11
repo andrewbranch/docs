@@ -228,7 +228,7 @@ The available `moduleResolution` options are:
 - **`node10`**: Formerly known as `node`, this is the unfortunate default when `module` is set to `commonjs`. It’s a pretty good model of Node versions older than v12, and sometimes it’s a passable approximation of how most bundlers do module resolution. It supports looking up packages from `node_modules`, loading directory `index.js` files, and omitting `.js` extensions in relative module specifiers. Because Node v12 introduced different module resolution rules for ES modules, though, it’s a very bad model of modern versions of Node. It should not be used for new projects.
 - **`node16`**: This is the counterpart of `--module node16` and is set by default with that `module` setting. Node v12 and later support both ESM and CJS, each of which uses its own module resolution algorithm. In Node, module specifiers in import statements and dynamic `import()` calls are not allowed to omit file extensions or `/index.js` suffixes, while module specifiers in `require` calls are. This module resolution mode understands and enforces this restriction where necessary, as determined by the [module detection rules](#module-kind-detection) instated by `--module node16`. (For `node16` and `nodenext`, `module` and `moduleResolution` go hand-in-hand: setting one to `node16` or `nodenext` while setting the other to something else has unsupported behavior and may be an error in the future.)
 - **`nodenext`**: Currently identical to `node16`, this is the counterpart of `--module nodenext` and is set by default with that `module` setting. It’s intended to be a forward-looking mode that will support new Node module resolution features as they’re added.
-- **`bundler`**: Node v12 introduced some new module resolution features for importing npm packages—the `exports` and `imports` fields of package.json—and many bundlers adopted those features without also adopting the stricter rules for ESM imports. This module resolution mode provides a base algorithm for code targeting a bundler. It supports package.json `exports` and `imports` by default, but can be configured to ignore them. It requires setting `module` to `esnext`.
+- **`bundler`**: Node v12 introduced some new module resolution features for importing npm packages—the `"exports"` and `"imports"` fields of `package.json`—and many bundlers adopted those features without also adopting the stricter rules for ESM imports. This module resolution mode provides a base algorithm for code targeting a bundler. It supports `package.json` `"exports"` and `"imports"` by default, but can be configured to ignore them. It requires setting `module` to `esnext`.
 
 [TODO: link to reference pages for modern Node and `bundler`]
 
@@ -351,7 +351,7 @@ Because of this relationship, the compiler _assumes_ that wherever it sees a dec
    
    The last row expresses that non-JS files can be typed with the `allowArbitraryExtensions` compiler option to support cases where the module system supports importing non-JS files as JavaScript objects. For example, a file named `styles.css` can be represented by a declaration file named `styles.d.css.ts`.
 
-3. **Every module specifier that resolves to a declaration file in TypeScript must resolve to the JavaScript file it represents at runtime.** The easiest way to conform to this rule is to make every declaration file a direct sibling of its corresponding JavaScript file, with the same name. (Or, in the case of a package on DefinitelyTyped, the files in the `@types` package should be a 1:1 mirror of the files in the implementation package, even though they can’t be direct siblings on disk.) This is the default behavior of `tsc --declaration`, so it’s easiest to understand this rule by looking at a violation of it:
+3. **Every module specifier that resolves to a declaration file in TypeScript must resolve to its JavaScript file counterpart in the runtime.** The easiest way to conform to this rule is to make every declaration file a direct sibling of its corresponding JavaScript file, with the same name. (Or, in the case of a package on DefinitelyTyped, the files in the `@types` package should be a 1:1 mirror of the files in the implementation package, even though they can’t be direct siblings on disk.) This is the default behavior of `tsc --declaration`, so it’s easiest to understand this rule by looking at a violation of it:
    ```json5
    // @Filename: /node_modules/greetings/package.json
    {
@@ -369,3 +369,79 @@ Because of this relationship, the compiler _assumes_ that wherever it sees a dec
    It might have seemed fine for the declaration file to be named `index.d.ts` while the JavaScript file was named `greetings.js` since these filenames are hidden behind `"types"` and `"main"` for root package-name imports. But according to Node’s module resolution rules, we’re also allowed to access individual files in this package by name, where `"types"` and `"main"` don’t apply. There are ways to put declaration files in dedicated directories in published packages, but it requires extra care (and configuration) to ensure that the correct mapping from declaration file location to JavaScript file location is always used. It’s highly recommended to colocate declaration files with their implementation files until there’s a good reason not to.
 
 ### A tour of common module resolution features
+
+#### Relative file paths
+
+All of TypeScript’s `moduleResolution` algorithms support referencing a module by a relative path that includes the output extension:
+
+```ts
+// @Filename: a.ts
+export {};
+
+// @Filename: b.ts
+import {} from "./a.js"; // ✅ Works in every `moduleResolution`
+```
+
+(Absolute paths are also supported, though they’re uncommon and not recommended since they tend not to be portable.)
+
+#### `node_modules` packages
+
+Node treats module specifiers that aren’t relative paths, absolute paths, or URLs as references to packages that it looks up in `node_modules` subdirectories. Bundlers conveniently adopted this behavior to allow their users to use the same dependency management system, and often even the same dependencies, as they would in Node. All of TypeScript’s `moduleResolution` options except `classic` support `node_modules` lookups. Like Node, TypeScript reads `package.json` files to determine what file to load for a given specifier. Since TypeScript wants to find _declaration files_ instead of JavaScript files, the process can diverge slightly from Node’s with the use of some TypeScript-specific `package.json` fields: `"types"` is the declaration file counterpart of the `"main"` field, and `"typesVersions"` allows a package to specify different declaration files for different versions of TypeScript.
+
+If no types are found in a package, TypeScript will make an additional lookup for the package in `node_modules/@types` directories, where community-contributed type definitions from [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped) can be installed. The resolution process for a package specifier might go something like this:
+
+```ts
+// @Filename: /project/src/main.ts
+import { add } from "lodash";
+```
+
+- `/project/src/node_modules` doesn’t exist
+- `/project/node_modules/lodash/package.json` exists
+- No `"typesVersions"`, `"typings"`, or `"types"` field
+- The `"main"` field in `package.json` is `"lodash.js"`, but we want to find a declaration file
+- `/project/node_modules/lodash/lodash.ts` doesn’t exist
+- `/project/node_modules/lodash/lodash.tsx` doesn’t exist
+- `/project/node_modules/lodash/lodash.d.ts` doesn’t exist
+- `/project/node_modules/lodash/lodash.js.ts` doesn’t exist
+- `/project/node_modules/lodash/lodash.js.tsx` doesn’t exist
+- `/project/node_modules/lodash/lodash.js.d.ts` doesn’t exist
+- `/project/node_modules/lodash/lodash.js` isn’t a directory
+- `/project/node_modules/lodash/index.ts` doesn’t exist
+- `/project/node_modules/lodash/index.tsx` doesn’t exist
+- `/project/node_modules/lodash/index.d.ts` doesn’t exist
+- There are definitely no types here. Time to look for an `@types` package.
+- `/project/node_modules/@types/lodash/package.json` exists
+- The `"types"` field in `package.json` is `"index.d.ts"`
+- `/project/node_modules/@types/lodash/index.d.ts` exists ✅
+
+Node 12 introduced additional package resolution features controlled by `package.json` `"imports"` and `"exports"` fields. TypeScript’s `node16`, `nodenext`, and `bundler` `moduleResolution` options respect these fields. [TODO: too hard to mention conditional exports and `"types"` condition here?]
+
+[TODO: link to more details in reference section]
+
+#### Extension searching and directory `index` files
+
+Historically, Node and bundlers allowed `.js` extensions (and `/index.js` suffixes for references to directories) to be omitted from relative file paths in `require` calls:
+
+```ts
+const { add } = require("./math"); // Looks for './math.js' (then './math/index.js')
+```
+
+When TypeScript first added support for writing ESM `import` statements, Node didn’t yet support ES modules, so anyone who was writing `import` statements in TypeScript with the intent of running their code in Node had to use `--module commonjs` to transform those imports to `require` calls. Accordingly, `--module commonjs` implied `--moduleResolution node` (now called `node10`), which meant omitting `.js` extensions was possible in `import` statements in TypeScript too:
+
+```ts
+import { add } from "./math";
+// - becomes `require("./math")` due to `--module commonjs`
+// - Node looks for './math.js', then './math/index.js'
+// - TypeScript looks for './math.ts', then './math/index.ts' due to `--moduleResolution node`
+// - All good 👍
+```
+
+However, when Node added support for ES modules, they chose to use a stricter module resolution algorithm for imports than they had done for `require` calls. In Node, `import` declarations and dynamic `import("...")` calls do not support extension searching or directory `index` lookups. This restriction is respected in TypeScript’s `node16` and `nodenext` resolution modes. However, since the restriction only applies to `import` statements, not `require` calls, TypeScript enforces the restriction only for imports that get _emitted_ as imports. In `--module node16` and `nodenext`, it’s still possible to write import declarations that are transformed to `require` calls, and in these declarations, the looser `require`-based module resolution algorithm is applied:
+
+```ts
+// @Filename: main.cts
+import { add } from "./math"; // ✅ Ok - emits as `require("./math")` due to .cts extension
+
+// @Filename: main.mts
+import { add } from "./math"; // ❌ Needs `.js` extension - emits as-is due to .mts extension
+```
