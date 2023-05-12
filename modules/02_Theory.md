@@ -445,3 +445,34 @@ import { add } from "./math"; // ✅ Ok - emits as `require("./math")` due to .c
 // @Filename: main.mts
 import { add } from "./math"; // ❌ Needs `.js` extension - emits as-is due to .mts extension
 ```
+
+### Module resolution for bundlers, TypeScript runtimes, and Node loaders
+
+So far, we’ve really emphasized the distinction between _input files_ and _output files_. Recal that when specifying a file extension on a relative module specifier, TypeScript typically [makes you use the _output_ file extension](#typescript-imitates-the-hosts-module-resolution-but-with-types):
+
+```ts
+// @Filename: src/math.ts
+export function add(a: number, b: number) {
+  return a + b;
+}
+
+// @Filename: src/main.ts
+import { add } from "./math.ts";
+//                  ^^^^^^^^^^^
+// An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+```
+
+This restriction applies since TypeScript [won’t rewrite the extension](#module-specifiers-are-not-transformed) to `.js`, and if `"./math.ts"` appears in an output JS file, that import won’t resolve to another JS file at runtime. TypeScript really wants to prevent you from generating an unsafe output JS file. But what if there _is_ no output JS file? What if you’re in one of these situations:
+
+- You’re bundling this code, the bundler is configured to transpile TypeScript files in-memory, and it will eventually consume and erase all the imports you’ve written to produce a bundle.
+- You’re running this code directly in a TypeScript runtime like Deno or Bun.
+- You’re using `ts-node`, `tsx`, or another transpiling loader for Node.
+
+In these cases, you can turn on `noEmit` (or `emitDeclarationOnly`) and `allowImportingTsExtensions` to disable emitting unsafe JavaScript files and silence the error on `.ts`-extensioned imports.
+
+With or without `allowImportingTsExtensions`, it’s still important to pick the most appropriate `moduleResolution` setting for the module resolution host. For bundlers and the Bun runtime, it’s `bundler`. These module resolvers were inspired by Node, but didn’t adopt the strict ESM resolution algorithm that [disables extension searching](#extension-searching-and-directory-index-files) that Node applies to imports. The `bundler` module resolution setting reflects this, enabling `package.json` `"exports"` support like `node16` and `nodenext`, while always allowing extensionless imports.
+
+[TODO: link to guide on picking options]
+
+### Highly compatible module resolution for libraries
+

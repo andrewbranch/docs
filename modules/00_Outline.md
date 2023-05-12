@@ -21,13 +21,6 @@
          1. node_modules and package.json
             1. @types
             1. package.json `"exports"`
-      1. Node’s dual-algorithm system
-         1. CJS/ESM detection
-            1. File extensions
-            1. package.json `"type"`
-         1. ESM algorithm restrictions
-         1. package.json `"exports"` conditions
-         1. Importing ESM from CJS requires dynamic import
       1. Bundlers and other Node-like non-Node hosts
          1. `noEmit` and `allowImportingTsExtensions`
          1. Customization options
