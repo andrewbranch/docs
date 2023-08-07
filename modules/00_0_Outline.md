@@ -21,7 +21,7 @@
          1. node_modules and package.json
             1. @types
             1. package.json `"exports"`
-      1. Bundlers and other Node-like non-Node hosts
+      1. Bundlers and other Node.js-like non-Node.js hosts
          1. `noEmit` and `allowImportingTsExtensions`
          1. Customization options
    1. Caveats / limitations?
@@ -46,7 +46,7 @@
     1. `moduleResolution`
        1. `node16`/`nodenext`
        1. `bundler`
-    1. `allowJs` and `maxNodeModuleJsDepth`
+    1. `allowJs` and `maxNode.jsModuleJsDepth`
     1. package.json
        1. `"main"`, `"types"`
        1. `"typesVersions"`

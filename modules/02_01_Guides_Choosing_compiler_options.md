@@ -33,7 +33,7 @@ In addition to adopting the following settings, it’s also recommended _not_ to
 }
 ```
 
-### I’m compiling and running the outputs in Node
+### I’m compiling and running the outputs in Node.js
 
 Remember to set `"type": "module"` or use `.mts` files if you intend to emit ES modules.
 
@@ -65,7 +65,7 @@ ts-node attempts to be compatible with the same code and the same tsconfig.json 
 
 ### I’m using tsx
 
-Whereas ts-node makes minimal modifications to Node’s module system by default, [tsx](https://github.com/esbuild-kit/tsx) behaves more like a bundler, allowing extensionless/index module specifiers and arbitrary mixing of ESM and CJS. Use the same settings for tsx as you [would for a bundler](#im-using-a-bundler).
+Whereas ts-node makes minimal modifications to Node.js’s module system by default, [tsx](https://github.com/esbuild-kit/tsx) behaves more like a bundler, allowing extensionless/index module specifiers and arbitrary mixing of ESM and CJS. Use the same settings for tsx as you [would for a bundler](#im-using-a-bundler).
 
 ### I’m writing ES modules for the browser, with no bundler or module compiler
 
