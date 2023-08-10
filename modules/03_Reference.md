@@ -248,3 +248,176 @@ export default "default export";
     exports.default = "default export";
 });
 ```
+
+## The `moduleResolution` compiler option
+
+This section describes module resolution features and processes shared by multiple `moduleResolution` modes, then specifies the details of each mode. See the [Module resolution](./01_Theory.md#module-resolution) theory section for more background on what the option is and how it fits into the overall compilation process. In brief, `moduleResolution` controls how TypeScript resolves _module specifiers_ (string literals in `import`/`export`/`require` statements) to files on disk, and should be set to match the module resolver used by the target runtime or bundler.
+
+### Common features and processes
+
+#### File extension substitution
+
+TypeScript always wants to resolve internally to a file that can provide type information, while ensuring that the runtime or bundler can use the same path to resolve to a file that provides a JavaScript implementation. For any module specifier that would, according to the `moduleResolution` algorithm specified, trigger a lookup of a JavaScript file in the runtime or bundler, TypeScript will first try to find a TypeScript implementation file or type declaration file with the same name and analagous file extension.
+
+| Runtime lookup | TypeScript lookup #1 | TypeScript lookup #2 | TypeScript lookup #3 |
+| -------------- | -------------------- | -------------------- | -------------------- |
+| `/mod.js`      | `/mod.ts`            | `/mod.d.ts`          | `/mod.js`            |
+| `/mod.mjs`     | `/mod.mts`          | `/mod.d.mts`          | `/mod.mjs`           |
+| `/mod.cjs`     | `/mod.cts`          | `/mod.d.cts`          | `/mod.cjs`           |
+
+Note that this behavior is independent of the actual module specifier written in the import. This means that TypeScript can resolve to a `.ts` or `.d.ts` file even if the module specifier explicitly uses a `.js` file extension:
+
+```ts
+import x from "./mod.js";
+// Runtime lookup: "./mod.js"
+// TypeScript lookup #1: "./mod.ts"
+// TypeScript lookup #2: "./mod.d.ts"
+// TypeScript lookup #3: "./mod.js"
+```
+
+#### Relative file path resolution
+
+All of TypeScript’s `moduleResolution` algorithms support referencing a module by a relative path that includes a file extension (which will be substituted according to the [rules above](#file-extension-substitution)):
+
+```ts
+// @Filename: a.ts
+export {};
+
+// @Filename: b.ts
+import {} from "./a.js"; // ✅ Works in every `moduleResolution`
+```
+
+#### `baseUrl`
+
+TODO
+
+#### `paths`
+
+TODO
+
+#### `node_modules` package lookups
+
+Node.js treats module specifiers that aren’t relative paths, absolute paths, or URLs as references to packages that it looks up in `node_modules` subdirectories. Bundlers conveniently adopted this behavior to allow their users to use the same dependency management system, and often even the same dependencies, as they would in Node.js. All of TypeScript’s `moduleResolution` options except `classic` support `node_modules` lookups. Every `node_modules` package lookup has the following structure (beginning after higher precedence bare specifier rules, like `paths`, `baseUrl`, self-name imports, and package.json `"imports"` lookups have been exhausted):
+
+1. For each ancestor directory of the importing file, if a `node_modules` directory exists within it:
+   1. If a directory with the same name as the package exists within `node_modules`:
+      1. Attempt to resolve types from the package directory.
+      2. If a result is found, return it and stop the search.
+   2. If a directory with the same name as the package exists within `node_modules/@types`:
+      1. Attempt to resolve types from the `@types` package directory.
+      2. If a result is found, return it and stop the search.
+2. Repeat the previous search through all `node_modules` directories, but this time, allow JavaScript files as a result, and do not search in `@types` directories.
+
+All `moduleResolution` modes (except `classic`) follow this pattern, while the details of how they resolve from a package directory, once located, differ, and are explained in the following sections.
+
+#### package.json `"exports"`
+
+When `moduleResolution` is set to `node16`, `nodenext`, or `bundler`, and `resolvePackageJsonExports` is not disabled, TypeScript follows Node.js’s [package.json `"exports"` spec](https://nodejs.org/api/packages.html#packages_package_entry_points) when resolving from a package directory triggered by a [bare specifier `node_modules` package lookup](#node_modules-package-lookups).
+
+TypeScript’s implementation for resolving a module specifier through `"exports"` to a file path follows Node.js exactly. Once a file path is resolved, however, TypeScript will still [try multiple file extensions](#file-extension-substitution) in order to prioritize finding types.
+
+When resolving through [conditional `"exports"`](https://nodejs.org/api/packages.html#conditional-exports), TypeScript always matches the `"types"` and `"default"` conditions if present. Additionally, TypeScript will match a versioned types condition in the form `"types@{selector}"` (where `{selector}` is a `"typesVersions"`-compatible version selector) according to the same version-matching rules implemented in [`"typesVersions"`](#packagejson-typesversions). Other non-configurable conditions are dependent on the `moduleResolution` mode and specified in the following sections. Additional conditions can be configured to match with the `customConditions` compiler option.
+
+##### Example: subpaths, conditions, and extension substitution
+
+Scenario: `"pkg/subpath"` is requested with conditions `["types", "node", "require"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a package directory with the following package.json:
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    "./subpath": {
+      "import": "./subpath/index.mjs",
+      "require": "./subpath/index.cjs"
+    }
+  }
+}
+```
+
+Resolution process within the package directory:
+
+1. Does `"exports"` exist? **Yes.**
+2. Does `"exports"` have a `"./subpath"` entry? **Yes.**
+3. The value at `exports["./subpath"]` is an object—it must be specifying conditions.
+4. Does the first condition `"import"` match this request? **No.**
+5. Does the second condition `"require"` match this request? **Yes.**
+6. Does the path `"./subpath/index.cjs"` have a recognized TypeScript file extension? **No, so use extension substitution.**
+7. Via [extension substitution](#file-extension-substitution), try the following paths, returning the first one that exists, or `undefined` otherwise:
+   1. `./subpath/index.cts`
+   2. `./subpath/index.d.cts`
+   3. `./subpath/index.cjs`
+
+If `./subpath/index.cts` or `./subpath.d.cts` exists, resolution is complete. Otherwise, resolution searches `node_modules/@types/pkg` and other `node_modules` directories in an attempt to resolve types, according to the [`node_modules` package lookups](#node_modules-package-lookups) rules. If no types are found, a second pass through all `node_modules` resolves to `./subpath/index.cjs` (assuming it exists), which counts as a successful resolution, but one that does not provide types, leading to `any`-typed imports and a `noImplicitAny` error if enabled.
+
+##### Example: explicit `"types"` condition
+
+Scenario: `"pkg/subpath"` is requested with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a package directory with the following package.json:
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    "./subpath": {
+      "import": {
+        "types": "./types/subpath/index.d.mts",
+        "default": "./es/subpath/index.mjs"
+      },
+      "require": {
+        "types": "./types/subpath/index.d.cts",
+        "default": "./cjs/subpath/index.cjs"
+      }
+    }
+  }
+}
+```
+
+Resolution process within the package directory:
+
+1. Does `"exports"` exist? **Yes.**
+2. Does `"exports"` have a `"./subpath"` entry? **Yes.**
+3. The value at `exports["./subpath"]` is an object—it must be specifying conditions.
+4. Does the first condition `"import"` match this request? **Yes.**
+5. The value at `exports["./subpath"].import` is an object—it must be specifying conditions.
+6. Does the first condition `"types"` match this request? **Yes.**
+7. Does the path `"./types/subpath/index.d.mts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+8. Return the path `"./types/subpath/index.d.mts"` if it exists, `undefined` otherwise.
+
+##### Example: versioned `"types"` condition
+
+Scenario: using TypeScript 4.7.5, `"pkg/subpath"` is requested with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a package directory with the following package.json:
+
+```json
+{
+  "name": "pkg",
+  "exports": {
+    "./subpath": {
+      "types@>=5.2": "./ts5.2/subpath/index.d.ts",
+      "types@>=4.6": "./ts4.6/subpath/index.d.ts",
+      "types": "./tsold/subpath/index.d.ts",
+      "default": "./dist/subpath/index.js"
+    }
+  }
+}
+```
+
+Resolution process within the package directory:
+
+1. Does `"exports"` exist? **Yes.**
+2. Does `"exports"` have a `"./subpath"` entry? **Yes.**
+3. The value at `exports["./subpath"]` is an object—it must be specifying conditions.
+4. Does the first condition `"types@>=5.2"` match this request? **No, 4.7.5 is not greater than or equal to 5.2.**
+5. Does the second condition `"types@>=4.6"` match this request? **Yes, 4.7.5 is greater than or equal to 4.6.**
+6. Does the path `"./ts4.6/subpath/index.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+7. Return the path `"./ts4.6/subpath/index.d.ts"` if it exists, `undefined` otherwise.
+
+#### package.json `"imports"` and self-name imports
+
+TODO
+
+#### package.json `"typesVersions"`
+
+TODO
+
+### `node16`, `nodenext`
+
+`--moduleResolution node16` and `nodenext` must be partnered with [`--module node16` or `nodenext`](#node16-nodenext)
