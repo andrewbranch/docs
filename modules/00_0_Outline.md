@@ -46,7 +46,7 @@
     1. `moduleResolution`
        1. `node16`/`nodenext`
        1. `bundler`
-    1. `allowJs` and `maxNode.jsModuleJsDepth`
+    1. `allowJs` and `maxNodeModuleJsDepth`
     1. package.json
        1. `"main"`, `"types"`
        1. `"typesVersions"`
