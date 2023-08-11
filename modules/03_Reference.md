@@ -412,7 +412,58 @@ Resolution process within the package directory:
 
 #### package.json `"imports"` and self-name imports
 
-TODO
+When `moduleResolution` is set to `node16`, `nodenext`, or `bundler`, and `resolvePackageJsonImports` is not disabled, TypeScript will attempt to resolve import paths beginning with `#` through the the `"imports"` field of the nearest ancestor package.json of the importing file. Similarly, when [package.json `"exports"` lookups](#packagejson-exports) are enabled, TypeScript will attempt to resolve import paths beginning with the current package name—that is, the value in the `"name"` field of the nearest ancestor package.json of the importing file—through the `"exports"` field of that package.json. Both of these features allow files in a package to import other files in the same package, replacing a relative import path.
+
+TypeScript follows Node.js’s resolution algorithm for [`"imports"`](https://nodejs.org/api/packages.html#subpath-imports) and [self references](https://nodejs.org/api/packages.html#self-referencing-a-package-using-its-name) exactly up until a file path is resolved. At that point, TypeScript’s resolution algorithm forks based on whether the package.json containing the `"imports"` or `"exports"` being resolved belongs to a `node_modules` dependency or the local project being compiled (i.e., its directory contains the tsconfig.json file for the project that contains the importing file):
+
+- If the package.json is in `node_modules`, TypeScript will apply [extension substitution](#file-extension-substitution) to the file path if it doesn’t already have a recognized TypeScript file extension, and check for the existence of the resulting file paths.
+- If the package.json is part of the local project, an additional remapping step is performed in order to find the _input_ TypeScript implementation file that will eventually produce the output JavaScript or declaration file path that was resolved from `"imports"`. Without this step, any compilation that resolves an `"imports"` path would be referencing output files from the _previous compilation_ instead of other input files that are intended to be included in the current compilation. This remapping uses the `outDir`/`declarationDir` and `rootDir` from the tsconfig.json, so using `"imports"` usually requires an explicit `rootDir` to be set.
+
+This variation allows package authors to write `"imports"` and `"exports"` fields that reference only the compilation outputs that will be published to npm, while still allowing local development to use the original TypeScript source files.
+
+##### Example: `"imports"` with conditions in a local project
+
+Scenario: `"/src/main.mts"` imports `"#utils"` with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a project directory with a tsconfig.json and package.json:
+
+```json5
+// tsconfig.json
+{
+  "compilerOptions": {
+    "moduleResolution": "node16",
+    "resolvePackageJsonImports": true,
+    "rootDir": "./src",
+    "outDir": "./dist"
+  }
+}
+```
+
+```json5
+// package.json
+{
+  "name": "pkg",
+  "imports": {
+    "#utils": {
+      "import": "./dist/utils.d.mts",
+      "require": "./dist/utils.d.cts"
+    }
+  }
+}
+```
+
+Resolution process:
+
+1. Import path starts with `#`, try to resolve through `"imports"`.
+2. Does `"imports"` exist in the nearest ancestor package.json? **Yes.**
+3. Does `"#utils"` exist in the `"imports"` object? **Yes.**
+4. The value at `imports["#utils"]` is an object—it must be specifying conditions.
+5. Does the first condition `"import"` match this request? **Yes.**
+6. Should we attempt to map the output path to an input path? **Yes, because:**
+   - Is the package.json in `node_modules`? **No, it’s in the local project.**
+   - Is the tsconfig.json within the package.json directory? **Yes.**
+7. In `./dist/utils.d.mts`, replace the `outDir` prefix with `rootDir`. **`./src/utils.d.mts`**
+8. Replace the output extension `.d.mts` with the corresponding input extension `.mts`. **`./src/utils.mts`**
+9. Return the path `"./src/utils.mts"` if it exists.
+10. Otherwise, return the path `"./dist/utils.d.mts"` if it exists.
 
 #### package.json `"typesVersions"`
 
