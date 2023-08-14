@@ -326,6 +326,10 @@ Scenario: `"pkg/subpath"` is requested with conditions `["types", "node", "requi
 {
   "name": "pkg",
   "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    },
     "./subpath": {
       "import": "./subpath/index.mjs",
       "require": "./subpath/index.cjs"
@@ -410,6 +414,34 @@ Resolution process within the package directory:
 6. Does the path `"./ts4.6/subpath/index.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
 7. Return the path `"./ts4.6/subpath/index.d.ts"` if it exists, `undefined` otherwise.
 
+##### Example: subpath patterns
+
+Scenario: `"pkg/wildcard.js"` is requested with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a package directory with the following package.json:
+
+```json
+{
+  "name": "pkg",
+  "type": "module",
+  "exports": {
+    "./*.js": {
+      "types": "./types/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  }
+}
+```
+
+Resolution process within the package directory:
+
+1. Does `"exports"` exist? **Yes.**
+2. Does `"exports"` have a `"./wildcard.js"` entry? **No.**
+3. Does any key with a `*` in it match `"./wildcard.js"`? **Yes, `"./*.js"` matches and sets `wildcard` to be the substitution.**
+4. The value at `exports["./*.js"]` is an object—it must be specifying conditions.
+5. Does the first condition `"types"` match this request? **Yes.**
+6. In `./types/*.d.ts`, replace `*` with the substitution `wildcard`. **`./types/wildcard.d.ts`**
+7. Does the path `"./types/wildcard.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+8. Return the path `"./types/wildcard.d.ts"` if it exists, `undefined` otherwise.
+
 #### package.json `"imports"` and self-name imports
 
 When `moduleResolution` is set to `node16`, `nodenext`, or `bundler`, and `resolvePackageJsonImports` is not disabled, TypeScript will attempt to resolve import paths beginning with `#` through the the `"imports"` field of the nearest ancestor package.json of the importing file. Similarly, when [package.json `"exports"` lookups](#packagejson-exports) are enabled, TypeScript will attempt to resolve import paths beginning with the current package name—that is, the value in the `"name"` field of the nearest ancestor package.json of the importing file—through the `"exports"` field of that package.json. Both of these features allow files in a package to import other files in the same package, replacing a relative import path.
@@ -421,7 +453,7 @@ TypeScript follows Node.js’s resolution algorithm for [`"imports"`](https://no
 
 This variation allows package authors to write `"imports"` and `"exports"` fields that reference only the compilation outputs that will be published to npm, while still allowing local development to use the original TypeScript source files.
 
-##### Example: `"imports"` with conditions in a local project
+##### Example: local project with conditions
 
 Scenario: `"/src/main.mts"` imports `"#utils"` with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a project directory with a tsconfig.json and package.json:
 
@@ -464,6 +496,39 @@ Resolution process:
 8. Replace the output extension `.d.mts` with the corresponding input extension `.mts`. **`./src/utils.mts`**
 9. Return the path `"./src/utils.mts"` if it exists.
 10. Otherwise, return the path `"./dist/utils.d.mts"` if it exists.
+
+##### Example: `node_modules` dependency with subpath pattern
+
+Scenario: `"/node_modules/pkg/main.mts"` imports `"#internal/utils"` with conditions `["types", "node", "import"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) with the package.json:
+
+```json5
+// /node_modules/pkg/package.json
+{
+  "name": "pkg",
+  "imports": {
+    "#internal/*": {
+      "import": "./dist/internal/*.mjs",
+      "require": "./dist/internal/*.cjs"
+    }
+  }
+}
+```
+
+Resolution process:
+
+1.  Import path starts with `#`, try to resolve through `"imports"`.
+2.  Does `"imports"` exist in the nearest ancestor package.json? **Yes.**
+3.  Does `"#internal/utils"` exist in the `"imports"` object? **No, check for pattern matches.**
+4.  Does any key with a `*` match `"#internal/utils"`? **Yes, `"#internal/*"` matches and sets `utils` to be the substitution.**
+5.  The value at `imports["#internal/*"]` is an object—it must be specifying conditions.
+6.  Does the first condition `"import"` match this request? **Yes.**
+7.  Should we attempt to map the output path to an input path? **No, because the package.json is in `node_modules`.**
+8.  In `./dist/internal/*.mjs`, replace `*` with the substitution `utils`. **`./dist/internal/utils.mjs`**
+9.  Does the path `./dist/internal/utils.mjs` have a recognized TypeScript file extension? **No, try extension substitution.**
+10. Via [extension substitution](#file-extension-substitution), try the following paths, returning the first one that exists, or `undefined` otherwise:
+    1. `./dist/internal/utils.mts`
+    2. `./dist/internal/utils.d.mts`
+    3. `./dist/internal/utils.mjs`
 
 #### package.json `"typesVersions"`
 
