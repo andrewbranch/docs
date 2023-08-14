@@ -295,9 +295,13 @@ TODO
 
 TODO
 
+#### Directory modules
+
+TODO
+
 #### `node_modules` package lookups
 
-Node.js treats module specifiers that aren’t relative paths, absolute paths, or URLs as references to packages that it looks up in `node_modules` subdirectories. Bundlers conveniently adopted this behavior to allow their users to use the same dependency management system, and often even the same dependencies, as they would in Node.js. All of TypeScript’s `moduleResolution` options except `classic` support `node_modules` lookups. Every `node_modules` package lookup has the following structure (beginning after higher precedence bare specifier rules, like `paths`, `baseUrl`, self-name imports, and package.json `"imports"` lookups have been exhausted):
+Node.js treats module specifiers that aren’t relative paths, absolute paths, or URLs as references to packages that it looks up in `node_modules` subdirectories. Bundlers conveniently adopted this behavior to allow their users to use the same dependency management system, and often even the same dependencies, as they would in Node.js. All of TypeScript’s `moduleResolution` options except `classic` support `node_modules` lookups. (`classic` supports lookups in `node_modules/@types` when other means of resolution fail, but never looks for packages in `node_modules` directly.) Every `node_modules` package lookup has the following structure (beginning after higher precedence bare specifier rules, like `paths`, `baseUrl`, self-name imports, and package.json `"imports"` lookups have been exhausted):
 
 1. For each ancestor directory of the importing file, if a `node_modules` directory exists within it:
    1. If a directory with the same name as the package exists within `node_modules`:
@@ -384,7 +388,7 @@ Resolution process within the package directory:
 5. The value at `exports["./subpath"].import` is an object—it must be specifying conditions.
 6. Does the first condition `"types"` match this request? **Yes.**
 7. Does the path `"./types/subpath/index.d.mts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
-8. Return the path `"./types/subpath/index.d.mts"` if it exists, `undefined` otherwise.
+8. Return the path `"./types/subpath/index.d.mts"` if the file exists, `undefined` otherwise.
 
 ##### Example: versioned `"types"` condition
 
@@ -412,7 +416,7 @@ Resolution process within the package directory:
 4. Does the first condition `"types@>=5.2"` match this request? **No, 4.7.5 is not greater than or equal to 5.2.**
 5. Does the second condition `"types@>=4.6"` match this request? **Yes, 4.7.5 is greater than or equal to 4.6.**
 6. Does the path `"./ts4.6/subpath/index.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
-7. Return the path `"./ts4.6/subpath/index.d.ts"` if it exists, `undefined` otherwise.
+7. Return the path `"./ts4.6/subpath/index.d.ts"` if the file exists, `undefined` otherwise.
 
 ##### Example: subpath patterns
 
@@ -440,7 +444,7 @@ Resolution process within the package directory:
 5. Does the first condition `"types"` match this request? **Yes.**
 6. In `./types/*.d.ts`, replace `*` with the substitution `wildcard`. **`./types/wildcard.d.ts`**
 7. Does the path `"./types/wildcard.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
-8. Return the path `"./types/wildcard.d.ts"` if it exists, `undefined` otherwise.
+8. Return the path `"./types/wildcard.d.ts"` if the file exists, `undefined` otherwise.
 
 #### package.json `"imports"` and self-name imports
 
@@ -494,8 +498,8 @@ Resolution process:
    - Is the tsconfig.json within the package.json directory? **Yes.**
 7. In `./dist/utils.d.mts`, replace the `outDir` prefix with `rootDir`. **`./src/utils.d.mts`**
 8. Replace the output extension `.d.mts` with the corresponding input extension `.mts`. **`./src/utils.mts`**
-9. Return the path `"./src/utils.mts"` if it exists.
-10. Otherwise, return the path `"./dist/utils.d.mts"` if it exists.
+9. Return the path `"./src/utils.mts"` if the file exists.
+10. Otherwise, return the path `"./dist/utils.d.mts"` if the file exists.
 
 ##### Example: `node_modules` dependency with subpath pattern
 
@@ -532,8 +536,62 @@ Resolution process:
 
 #### package.json `"typesVersions"`
 
-TODO
+A [`node_modules` package](#node_modules-package-lookups) or [directory module](#directory-modules) may specify a `"typesVersions"` field in its package.json to redirect TypeScript’s resolution process according to the TypeScript compiler version, and for `node_modules` packages, according to the subpath being resolved. This allows package authors to include new TypeScript syntax in one set of type definitions while providing another set for backward compatibility with older TypeScript versions (through a tool like [downlevel-dts](https://github.com/sandersn/downlevel-dts)). `"typesVersions"` is supported in all `moduleResolution` modes; however, the field is not read in situations when [package.json `"exports"`](#packagejson-exports) are read.
+
+##### Example: redirect all requests to a subdirectory
+
+Scenario: a module imports `"pkg"` using TypeScript 5.2, where `node_modules/pkg/package.json` is:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "types": "./index.d.ts",
+  "typesVersions": {
+    ">=3.1": {
+      "*": ["ts3.1/*"]
+    }
+  }
+}
+```
+
+Resolution process:
+
+1. (Depending on compiler options) Does `"exports"` exist? **No.**
+2. Does `"typesVersions"` exist? **Yes.**
+3. Is the TypeScript version `>=3.1`? **Yes. Remember the mapping `"*": ["ts3.1/*"]`.**
+4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
+5. Does `"types"` exist? **Yes.**
+6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"*"` matches and sets `index.d.ts` to be the substitution.**
+7. In `ts3.1/*`, replace `*` with the substitution `./index.d.ts`: **`ts3.1/index.d.ts`**.
+8. Does the path `./ts3.1/index.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+9. Return the path `./ts3.1/index.d.ts` if the file exists, `undefined` otherwise.
+
+##### Example: redirect requests for a specific file
+
+Scenario: a module imports `"pkg"` using TypeScript 3.9, where `node_modules/pkg/package.json` is:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "types": "./index.d.ts",
+  "typesVersions": {
+    "<4.0": { "index.d.ts": ["index.v3.d.ts"] }
+  }
+}
+```
+
+Resolution process:
+
+1. (Depending on compiler options) Does `"exports"` exist? **No.**
+2. Does `"typesVersions"` exist? **Yes.**
+3. Is the TypeScript version `<4.0`? **Yes. Remember the mapping `"index.d.ts": ["index.v3.d.ts"]`.**
+4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
+5. Does `"types"` exist? **Yes.**
+6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"index.d.ts"` matches.**
+7. Does the path `./index.v3.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+8. Return the path `./index.v3.d.ts` if the file exists, `undefined` otherwise.
 
 ### `node16`, `nodenext`
 
-`--moduleResolution node16` and `nodenext` must be partnered with [`--module node16` or `nodenext`](#node16-nodenext)
