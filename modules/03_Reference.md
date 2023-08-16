@@ -322,6 +322,8 @@ TypeScript’s implementation for resolving a module specifier through `"exports
 
 When resolving through [conditional `"exports"`](https://nodejs.org/api/packages.html#conditional-exports), TypeScript always matches the `"types"` and `"default"` conditions if present. Additionally, TypeScript will match a versioned types condition in the form `"types@{selector}"` (where `{selector}` is a `"typesVersions"`-compatible version selector) according to the same version-matching rules implemented in [`"typesVersions"`](#packagejson-typesversions). Other non-configurable conditions are dependent on the `moduleResolution` mode and specified in the following sections. Additional conditions can be configured to match with the `customConditions` compiler option.
 
+Note that the presence of `"exports"` prevents any subpaths not explicitly listed or matched by a pattern in `"exports"` from being resolved.
+
 ##### Example: subpaths, conditions, and extension substitution
 
 Scenario: `"pkg/subpath"` is requested with conditions `["types", "node", "require"]` (determined by `moduleResolution` setting and the context that triggered the module resolution request) in a package directory with the following package.json:
@@ -445,6 +447,27 @@ Resolution process within the package directory:
 6. In `./types/*.d.ts`, replace `*` with the substitution `wildcard`. **`./types/wildcard.d.ts`**
 7. Does the path `"./types/wildcard.d.ts"` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
 8. Return the path `"./types/wildcard.d.ts"` if the file exists, `undefined` otherwise.
+
+##### Example: `"exports"` block other subpaths
+
+Scenario: `"pkg/dist/index.js"` is requested in a package directory with the following package.json:
+
+```json
+{
+  "name": "pkg",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js"
+}
+```
+
+Resolution process within the package directory:
+
+1. Does `"exports"` exist? **Yes.**
+2. The value at `exports` is a string—it must be a file path for the package root (`"."`).
+3. Is the request `"pkg/dist/index.js"` for the package root? **No, it has a subpath `dist/index.js`.**
+4. Resolution fails; return `undefined`.
+
+Without `"exports"`, the request could have succeeded, but the presence of `"exports"` prevents resolving any subpaths that cannot be matched through `"exports"`.
 
 #### package.json `"imports"` and self-name imports
 
