@@ -6,7 +6,7 @@ TODO: copy and edit from existing website
 
 ## The `module` compiler option
 
-This section discusses the details of each `module` compiler option value. See the [Module output format](./01_Theory.md#the-module-output-format) theory section for more background on what the option is and how it fits into the overall compilation process. In brief, the `module` compiler option was historically only used to control the output module format of emitted JavaScript files. The more recent `node16` and `nodenext` values, however, describe a wide range of characteristics of Node.js’s module system, including what module formats are supported, how the module format of each file is determined, and how different module formats interoperate.
+This section discusses the details of each `module` compiler option value. See the [_Module output format_](./01_Theory.md#the-module-output-format) theory section for more background on what the option is and how it fits into the overall compilation process. In brief, the `module` compiler option was historically only used to control the output module format of emitted JavaScript files. The more recent `node16` and `nodenext` values, however, describe a wide range of characteristics of Node.js’s module system, including what module formats are supported, how the module format of each file is determined, and how different module formats interoperate.
 
 ### `node16`, `nodenext`
 
@@ -251,7 +251,7 @@ export default "default export";
 
 ## The `moduleResolution` compiler option
 
-This section describes module resolution features and processes shared by multiple `moduleResolution` modes, then specifies the details of each mode. See the [Module resolution](./01_Theory.md#module-resolution) theory section for more background on what the option is and how it fits into the overall compilation process. In brief, `moduleResolution` controls how TypeScript resolves _module specifiers_ (string literals in `import`/`export`/`require` statements) to files on disk, and should be set to match the module resolver used by the target runtime or bundler.
+This section describes module resolution features and processes shared by multiple `moduleResolution` modes, then specifies the details of each mode. See the [_Module resolution_](./01_Theory.md#module-resolution) theory section for more background on what the option is and how it fits into the overall compilation process. In brief, `moduleResolution` controls how TypeScript resolves _module specifiers_ (string literals in `import`/`export`/`require` statements) to files on disk, and should be set to match the module resolver used by the target runtime or bundler.
 
 ### Common features and processes
 
@@ -259,11 +259,11 @@ This section describes module resolution features and processes shared by multip
 
 TypeScript always wants to resolve internally to a file that can provide type information, while ensuring that the runtime or bundler can use the same path to resolve to a file that provides a JavaScript implementation. For any module specifier that would, according to the `moduleResolution` algorithm specified, trigger a lookup of a JavaScript file in the runtime or bundler, TypeScript will first try to find a TypeScript implementation file or type declaration file with the same name and analagous file extension.
 
-| Runtime lookup | TypeScript lookup #1 | TypeScript lookup #2 | TypeScript lookup #3 |
-| -------------- | -------------------- | -------------------- | -------------------- |
-| `/mod.js`      | `/mod.ts`            | `/mod.d.ts`          | `/mod.js`            |
-| `/mod.mjs`     | `/mod.mts`          | `/mod.d.mts`          | `/mod.mjs`           |
-| `/mod.cjs`     | `/mod.cts`          | `/mod.d.cts`          | `/mod.cjs`           |
+| Runtime lookup | TypeScript lookup #1 | TypeScript lookup #2 | TypeScript lookup #3 | TypeScript lookup #4 | TypeScript lookup #5 |
+| -------------- | -------------------- | -------------------- | -------------------- | -------------------- | -------------------- |
+| `/mod.js`      | `/mod.ts`            | `/mod.tsx`           | `/mod.d.ts`          | `/mod.js`            | `./mod.jsx`          |
+| `/mod.mjs`     | `/mod.mts`           | `/mod.d.mts`         | `/mod.mjs`           |                      |                      |
+| `/mod.cjs`     | `/mod.cts`           | `/mod.d.cts`         | `/mod.cjs`           |                      |                      |
 
 Note that this behavior is independent of the actual module specifier written in the import. This means that TypeScript can resolve to a `.ts` or `.d.ts` file even if the module specifier explicitly uses a `.js` file extension:
 
@@ -274,6 +274,8 @@ import x from "./mod.js";
 // TypeScript lookup #2: "./mod.d.ts"
 // TypeScript lookup #3: "./mod.js"
 ```
+
+See [_TypeScript imitates the host’s module resolution, but with types_](./01_Theory.md#typescript-imitates-the-hosts-module-resolution-but-with-types) for an explanation of why TypeScript’s module resolution works this way.
 
 #### Relative file path resolution
 
@@ -287,6 +289,40 @@ export {};
 import {} from "./a.js"; // ✅ Works in every `moduleResolution`
 ```
 
+#### Extensionless relative paths
+
+In some cases, the runtime or bundler allows omitting a `.js` file extension from a relative path. TypeScript supports this behavior where the `moduleResolution` setting and the context indicate that the runtime or bundler supports it:
+
+```ts
+// @Filename: a.ts
+export {};
+
+// @Filename: b.ts
+import {} from "./a";
+```
+
+If TypeScript determines that the runtime will perform a lookup for `./a.js` given the module specifier `"./a"`, then `./a.js` will undergo [extension substitution](#file-extension-substitution), and resolve to the file `a.ts` in this example.
+
+Extensionless relative paths are not supported in `import` paths in Node.js, and are not always supported in file paths specified in package.json files. TypeScript currently never supports omitting a `.mjs`/`.mts` or `.cjs`/`.cts` file extension, even though some runtimes and bundlers do.
+
+#### Directory modules (index file resolution)
+
+In some cases, a directory, rather than a file, can be referenced as a module. In the simplest and most common case, this involves the runtime or bundler looking for an `index.js` file in a directory. TypeScript supports this behavior where the `moduleResolution` setting and the context indicate that the runtime or bundler supports it:
+
+```ts
+// @Filename: dir/index.ts
+export {};
+
+// @Filename: b.ts
+import {} from "./dir";
+```
+
+If TypeScript determines that the runtime will perform a lookup for `./dir/index.js` given the module specifier `"./dir"`, then `./dir/index.js` will undergo [extension substitution](#file-extension-substitution), and resolve to the file `dir/index.ts` in this example.
+
+Directory modules may also contain a package.json file, where resolution of the [`"main"` and `"types"`](#packagejson-main-and-types) fields are supported, and take precedence over `index.js` lookups. The [`"typesVersions"`](#packagejson-typesversions) field is also supported in directory modules.
+
+Note that directory modules are not the same as [`node_modules` packages](#node_modules-package-lookups) and only support a subset of the features available to packages, and are not supported at all in some contexts.  Node.js considers them a [legacy feature](https://nodejs.org/dist/latest-v20.x/docs/api/modules.html#folders-as-modules).
+
 #### `baseUrl`
 
 TODO
@@ -295,9 +331,6 @@ TODO
 
 TODO
 
-#### Directory modules
-
-TODO
 
 #### `node_modules` package lookups
 
@@ -469,6 +502,90 @@ Resolution process within the package directory:
 
 Without `"exports"`, the request could have succeeded, but the presence of `"exports"` prevents resolving any subpaths that cannot be matched through `"exports"`.
 
+#### package.json `"typesVersions"`
+
+A [`node_modules` package](#node_modules-package-lookups) or [directory module](#directory-modules-index-file-resolution) may specify a `"typesVersions"` field in its package.json to redirect TypeScript’s resolution process according to the TypeScript compiler version, and for `node_modules` packages, according to the subpath being resolved. This allows package authors to include new TypeScript syntax in one set of type definitions while providing another set for backward compatibility with older TypeScript versions (through a tool like [downlevel-dts](https://github.com/sandersn/downlevel-dts)). `"typesVersions"` is supported in all `moduleResolution` modes; however, the field is not read in situations when [package.json `"exports"`](#packagejson-exports) are read.
+
+##### Example: redirect all requests to a subdirectory
+
+Scenario: a module imports `"pkg"` using TypeScript 5.2, where `node_modules/pkg/package.json` is:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "types": "./index.d.ts",
+  "typesVersions": {
+    ">=3.1": {
+      "*": ["ts3.1/*"]
+    }
+  }
+}
+```
+
+Resolution process:
+
+1. (Depending on compiler options) Does `"exports"` exist? **No.**
+2. Does `"typesVersions"` exist? **Yes.**
+3. Is the TypeScript version `>=3.1`? **Yes. Remember the mapping `"*": ["ts3.1/*"]`.**
+4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
+5. Does `"types"` exist? **Yes.**
+6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"*"` matches and sets `index.d.ts` to be the substitution.**
+7. In `ts3.1/*`, replace `*` with the substitution `./index.d.ts`: **`ts3.1/index.d.ts`**.
+8. Does the path `./ts3.1/index.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+9. Return the path `./ts3.1/index.d.ts` if the file exists, `undefined` otherwise.
+
+##### Example: redirect requests for a specific file
+
+Scenario: a module imports `"pkg"` using TypeScript 3.9, where `node_modules/pkg/package.json` is:
+
+```json
+{
+  "name": "pkg",
+  "version": "1.0.0",
+  "types": "./index.d.ts",
+  "typesVersions": {
+    "<4.0": { "index.d.ts": ["index.v3.d.ts"] }
+  }
+}
+```
+
+Resolution process:
+
+1. (Depending on compiler options) Does `"exports"` exist? **No.**
+2. Does `"typesVersions"` exist? **Yes.**
+3. Is the TypeScript version `<4.0`? **Yes. Remember the mapping `"index.d.ts": ["index.v3.d.ts"]`.**
+4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
+5. Does `"types"` exist? **Yes.**
+6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"index.d.ts"` matches.**
+7. Does the path `./index.v3.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
+8. Return the path `./index.v3.d.ts` if the file exists, `undefined` otherwise.
+
+#### package.json `"main"` and `"types"`
+
+If a directory’s [package.json `"exports"`](#packagejson-exports) field is not read (either due to compiler options, or because it is not present, or because the directory is being resolved as a [directory module](#directory-modules-index-file-resolution) instead of a [`node_modules` package](#node_modules-package-lookups)) and the module specifier does not have a subpath after the package name or package.json-containing directory, TypeScript will attempt to resolve from these package.json fields, in order, in an attempt to find the main module for the package or directory:
+
+- `"types"`
+- `"typings"` (legacy)
+- `"main"`
+
+The declaration file found at `"types"` is assumed to be an accurate representation of the implementation file found at `"main"`. If `"types"` and `"typings"` are not present or cannot be resolved, TypeScript will read the `"main"` field and perform [extension substitution](#file-extension-substitution) to find a declaration file.
+
+When publishing a typed package to npm, it’s recommended to include a `"types"` field even if [extension substitution](#file-extension-substitution) or [package.json `"exports"`](#packagejson-exports) make it unnecessary, because npm shows a TS icon on the package registry listing only if the package.json contains a `"types"` field.
+
+#### Package-relative file paths
+
+If neither [package.json `"exports"`](#packagejson-exports) nor [package.json `"typesVersions"`](#packagejson-typesversions) apply, subpaths of a bare package specifier resolve relative to the package directory, according to applicable [relative path](#relative-file-path-resolution) resolution rules. In modes that respect [package.json `"exports"`], this behavior is blocked by the mere presence of the `"exports"` field in the package’s package.json, even if the import fails to resolve through `"exports"`, as demonstrated in [an example above](#example-exports-block-other-subpaths). On the other hand, if the import fails to resolve through `"typesVersions"`, a package-relative file path resolution is attempted as a fallback.
+
+When package-relative paths are supported, they resolve under the same rules as any other relative path considering the `moduleResolution` mode and context. For example, in [`--moduleResolution nodenext`](#node16-nodenext-1), [directory modules](#directory-modules-index-file-resolution) and [extensionless paths](#extensionless-relative-paths) are only supported in `require` calls, not in `import`s:
+
+```ts
+// @Filename: module.mts
+import "pkg/dist/foo";                // ❌ import, needs `.js` extension
+import "pkg/dist/foo.js";             // ✅
+import foo = require("pkg/dist/foo"); // ✅ require, no extension needed
+```
+
 #### package.json `"imports"` and self-name imports
 
 When `moduleResolution` is set to `node16`, `nodenext`, or `bundler`, and `resolvePackageJsonImports` is not disabled, TypeScript will attempt to resolve import paths beginning with `#` through the the `"imports"` field of the nearest ancestor package.json of the importing file. Similarly, when [package.json `"exports"` lookups](#packagejson-exports) are enabled, TypeScript will attempt to resolve import paths beginning with the current package name—that is, the value in the `"name"` field of the nearest ancestor package.json of the importing file—through the `"exports"` field of that package.json. Both of these features allow files in a package to import other files in the same package, replacing a relative import path.
@@ -557,64 +674,39 @@ Resolution process:
     2. `./dist/internal/utils.d.mts`
     3. `./dist/internal/utils.mjs`
 
-#### package.json `"typesVersions"`
-
-A [`node_modules` package](#node_modules-package-lookups) or [directory module](#directory-modules) may specify a `"typesVersions"` field in its package.json to redirect TypeScript’s resolution process according to the TypeScript compiler version, and for `node_modules` packages, according to the subpath being resolved. This allows package authors to include new TypeScript syntax in one set of type definitions while providing another set for backward compatibility with older TypeScript versions (through a tool like [downlevel-dts](https://github.com/sandersn/downlevel-dts)). `"typesVersions"` is supported in all `moduleResolution` modes; however, the field is not read in situations when [package.json `"exports"`](#packagejson-exports) are read.
-
-##### Example: redirect all requests to a subdirectory
-
-Scenario: a module imports `"pkg"` using TypeScript 5.2, where `node_modules/pkg/package.json` is:
-
-```json
-{
-  "name": "pkg",
-  "version": "1.0.0",
-  "types": "./index.d.ts",
-  "typesVersions": {
-    ">=3.1": {
-      "*": ["ts3.1/*"]
-    }
-  }
-}
-```
-
-Resolution process:
-
-1. (Depending on compiler options) Does `"exports"` exist? **No.**
-2. Does `"typesVersions"` exist? **Yes.**
-3. Is the TypeScript version `>=3.1`? **Yes. Remember the mapping `"*": ["ts3.1/*"]`.**
-4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
-5. Does `"types"` exist? **Yes.**
-6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"*"` matches and sets `index.d.ts` to be the substitution.**
-7. In `ts3.1/*`, replace `*` with the substitution `./index.d.ts`: **`ts3.1/index.d.ts`**.
-8. Does the path `./ts3.1/index.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
-9. Return the path `./ts3.1/index.d.ts` if the file exists, `undefined` otherwise.
-
-##### Example: redirect requests for a specific file
-
-Scenario: a module imports `"pkg"` using TypeScript 3.9, where `node_modules/pkg/package.json` is:
-
-```json
-{
-  "name": "pkg",
-  "version": "1.0.0",
-  "types": "./index.d.ts",
-  "typesVersions": {
-    "<4.0": { "index.d.ts": ["index.v3.d.ts"] }
-  }
-}
-```
-
-Resolution process:
-
-1. (Depending on compiler options) Does `"exports"` exist? **No.**
-2. Does `"typesVersions"` exist? **Yes.**
-3. Is the TypeScript version `<4.0`? **Yes. Remember the mapping `"index.d.ts": ["index.v3.d.ts"]`.**
-4. Are we resolving a subpath after the package name? **No, just the root `"pkg"`.**
-5. Does `"types"` exist? **Yes.**
-6. Does any key in `"typesVersions"` match `./index.d.ts`? **Yes, `"index.d.ts"` matches.**
-7. Does the path `./index.v3.d.ts` have a recognized TypeScript file extension? **Yes, so don’t use extension substitution.**
-8. Return the path `./index.v3.d.ts` if the file exists, `undefined` otherwise.
-
 ### `node16`, `nodenext`
 
+`--moduleResolution node16` and `nodenext` must be pared with their [corresponding `module` value](#node16-nodenext). They are currently identical, but if Node.js makes significant changes to its module system in the future, `node16` will be frozen while `nodenext` will be updated to reflect the new behavior.
+
+These modes reflect the module resolution behavior of Node.js v12 and later, where the resolution algorithm for ECMAScript imports is significantly different from the algorithm for CommonJS `require` calls. For each module specifier being resolved, the syntax and the [module format of the importing file](#module-format-detection) are first used to determine whether the module specifier will be in an `import` or `require` in the emitted JavaScript. That information is then passed into the module resolver to determine which resolution algorithm to use (and whether to use the `"import"` or `"require"` condition for package.json [`"exports"`](#packagejson-exports) or [`"imports"`](#packagejson-imports-and-self-name-imports)).
+
+> TypeScript files that are [determined to be in CommonJS format](#module-format-detection) may still use `import` and `export` syntax by default, but the emitted JavaScript will use `require` and `module.exports` instead. This means that it’s common to see `import` statements that are resolved using the `require` algorithm. If this causes confusion, the `verbatimModuleSyntax` compiler option can be enabled, which prohibits the use of `import` statements that would be emitted as `require` calls.
+
+Note that dynamic `import()` calls are always resolved using the `import` algorithm, according to Node.js’s behavior. However, `import()` types are resolved according to the format of the importing file (for backward compatibility with existing CommonJS-format type declarations):
+
+```ts
+// @Filename: module.mts
+import x from "./mod.js";             // `import` algorithm due to file format (emitted as-written)
+import("./mod.js");                   // `import` algorithm due to syntax (emitted as-written)
+type Mod = typeof import("./mod.js"); // `import` algorithm due to file format
+import mod = require("./mod");        // `require` algorithm due to syntax (emitted as `require`)
+
+// @Filename: commonjs.cts
+import x from "./mod";                // `require` algorithm due to file format (emitted as `require`)
+import("./mod.js");                   // `import` algorithm due to syntax (emitted as-written)
+type Mod = typeof import("./mod");    // `require` algorithm due to file format
+import mod = require("./mod");        // `require` algorithm due to syntax (emitted as `require`)
+```
+
+#### Supported features
+
+| | `import` | `require` |
+|-| -------- | --------- |
+| [`node_modules` package lookups](#node_modules-package-lookups) | ✅ | ✅ |
+| [package.json `"exports"`](#packagejson-exports) | ✅ matches `types`, `node`, `import` | ✅ matches `types`, `node`, `require` |
+| [package.json `"imports"` and self-name imports](#packagejson-imports-and-self-name-imports) | ✅ matches `types`, `node`, `import` | ✅ matches `types`, `node`, `require` |
+| [package.json `"typesVersions"`](#packagejson-typesversions) | ✅ | ✅ |
+| [Package-relative paths](#package-relative-file-paths) | ✅ when `exports` not present | ✅ when `exports` not present |
+| [Full relative paths](#relative-file-path-resolution) | ✅ | ✅ |
+| [Extensionless relative paths](#extensionless-relative-paths) | ❌ | ✅ |
+| [Directory modules](#directory-modules-index-file-resolution) | ❌ | ✅ |
