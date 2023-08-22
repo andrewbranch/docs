@@ -357,7 +357,7 @@ Because of this relationship, the compiler _assumes_ that wherever it sees a dec
 
 ### Module resolution for bundlers, TypeScript runtimes, and Node.js loaders
 
-So far, we’ve really emphasized the distinction between _input files_ and _output files_. Recal that when specifying a file extension on a relative module specifier, TypeScript typically [makes you use the _output_ file extension](#typescript-imitates-the-hosts-module-resolution-but-with-types):
+So far, we’ve really emphasized the distinction between _input files_ and _output files_. Recall that when specifying a file extension on a relative module specifier, TypeScript typically [makes you use the _output_ file extension](#typescript-imitates-the-hosts-module-resolution-but-with-types):
 
 ```ts
 // @Filename: src/math.ts
