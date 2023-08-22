@@ -170,6 +170,10 @@ module.exports = {
 };
 ```
 
+### `system`
+
+TODO
+
 ### `amd`
 
 #### Summary
@@ -323,14 +327,30 @@ Directory modules may also contain a package.json file, where resolution of the 
 
 Note that directory modules are not the same as [`node_modules` packages](#node_modules-package-lookups) and only support a subset of the features available to packages, and are not supported at all in some contexts.  Node.js considers them a [legacy feature](https://nodejs.org/dist/latest-v20.x/docs/api/modules.html#folders-as-modules).
 
-#### `baseUrl`
-
-TODO
-
 #### `paths`
 
 TODO
 
+- originally designed for AMD but still useful in special cases
+- does not change emit
+- used to tell TypeScript about runtime resolutions that it can’t know about
+- some tools manifest tsconfig paths, but consider using `"imports"` instead
+
+#### `baseUrl`
+
+> `baseUrl` was designed for use with AMD module loaders. If you aren’t using an AMD module loader, you probably shouldn’t use `baseUrl`. Since TypeScript 4.1, `baseUrl` is no longer required to use [`paths`](#paths) and should not be used just to set the directory `paths` values are resolved from.
+
+The `baseUrl` compiler option can be combined with any `moduleResolution` mode and specifies a directory that bare specifiers (module specifiers that don’t begin with `./`, `../`, or `/`) are resolved from. `baseUrl` has a higher precedence than [`node_modules` package lookups](#node_modules-package-lookups) in `moduleResolution` modes that support them.
+
+When performing a `baseUrl` lookup, resolution proceeds with the same rules as other relative path resolutions. For example, in a `moduleResolution` mode that supports [extensionless relative paths](#extensionless-relative-paths) a module specifier `"some-file"` may resolve to `/src/some-file.ts` if `baseUrl` is set to `/src`.
+
+Resolution of relative module specifiers are never affected by the `baseUrl` option.
+
+#### `rootDirs`
+
+TODO
+
+- also an AMD legacy - can we just ignore this?
 
 #### `node_modules` package lookups
 
@@ -700,8 +720,12 @@ import mod = require("./mod");        // `require` algorithm due to syntax (emit
 
 #### Supported features
 
+Features are listed in order of precedence.
+
 | | `import` | `require` |
 |-| -------- | --------- |
+| [`paths`](#paths) | ✅ | ✅ |
+| [`baseUrl`](#baseurl) | ✅ | ✅ |
 | [`node_modules` package lookups](#node_modules-package-lookups) | ✅ | ✅ |
 | [package.json `"exports"`](#packagejson-exports) | ✅ matches `types`, `node`, `import` | ✅ matches `types`, `node`, `require` |
 | [package.json `"imports"` and self-name imports](#packagejson-imports-and-self-name-imports) | ✅ matches `types`, `node`, `import` | ✅ matches `types`, `node`, `require` |
@@ -710,3 +734,15 @@ import mod = require("./mod");        // `require` algorithm due to syntax (emit
 | [Full relative paths](#relative-file-path-resolution) | ✅ | ✅ |
 | [Extensionless relative paths](#extensionless-relative-paths) | ❌ | ✅ |
 | [Directory modules](#directory-modules-index-file-resolution) | ❌ | ✅ |
+
+### `bundler`
+
+TODO
+
+### `node10` (formerly known as `node`)
+
+TODO
+
+### `classic`
+
+Do not use `classic`.
