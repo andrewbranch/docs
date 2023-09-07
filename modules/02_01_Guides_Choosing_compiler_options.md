@@ -85,7 +85,7 @@ TypeScript does not currently have options dedicated to this scenario, but you c
     "module": "nodenext",
     "paths": {
       // Point TS to local types for remote URLs:
-      "https://esm.sh/lodash@4.17.21": "./node_modules/@types/lodash/index.d.ts",
+      "https://esm.sh/lodash@4.17.21": ["./node_modules/@types/lodash/index.d.ts"],
       // Optional: point bare specifier imports to an empty file
       // to prohibit importing from node_modules specifiers not listed here:
       "*": ["./empty-file.ts"]

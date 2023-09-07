@@ -172,7 +172,43 @@ module.exports = {
 
 ### `system`
 
-TODO
+#### Summary
+
+- Designed for use with the [SystemJS module loader](https://github.com/systemjs/systemjs).
+
+#### Examples
+
+```ts
+import x, { y, z } from "mod";
+import * as mod from "mod";
+const dynamic = import("mod");
+console.log(x, y, z, mod, dynamic);
+
+export const e1 = 0;
+export default "default export";
+```
+
+```js
+System.register(["mod"], function (exports_1, context_1) {
+    "use strict";
+    var mod_1, mod, dynamic, e1;
+    var __moduleName = context_1 && context_1.id;
+    return {
+        setters: [
+            function (mod_1_1) {
+                mod_1 = mod_1_1;
+                mod = mod_1_1;
+            }
+        ],
+        execute: function () {
+            dynamic = context_1.import("mod");
+            console.log(mod_1.default, mod_1.y, mod_1.z, mod, dynamic);
+            exports_1("e1", e1 = 0);
+            exports_1("default", "default export");
+        }
+    };
+});
+```
 
 ### `amd`
 
@@ -329,12 +365,73 @@ Note that directory modules are not the same as [`node_modules` packages](#node_
 
 #### `paths`
 
+##### Overview
+
+TypeScript offers a way to override the compiler’s module resolution for bare specifiers with the `paths` compiler option. While the feature was originally designed to be used with the AMD module loader (a means of running modules in the browser before ESM existed or bundlers were widely used), it still has uses today when a runtime or bundler supports module resolution features that TypeScript does not model. For example, when running Node.js with `--experimental-network-imports`, you can manually specify a local type definition file for a specific `https://` import:
+
+```json
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "paths": {
+      "https://esm.sh/lodash@4.17.21": ["./node_modules/@types/lodash/index.d.ts"]
+    }
+  }
+}
+```
+
+```ts
+// Typed by ./node_modules/@types/lodash/index.d.ts due to `paths` entry
+import { add } from "https://esm.sh/lodash@4.17.21";
+```
+
+It’s also common for apps built with bundlers to define convenience path aliases in their bundler configuration, and then inform TypeScript of those aliases with `paths`:
+
+```json
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@app/*": ["./src/*"]
+    }
+  }
+}
+```
+
+##### `paths` does not affect emit
+
+The `paths` option does _not_ change the import path in the code emitted by TypeScript. Consequently, it’s very easy to create path aliases that appear to work in TypeScript but will crash at runtime:
+
+```json
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "paths": {
+      "node-has-no-idea-what-this-is": ["./oops.ts"]
+    }
+  }
+}
+```
+
+```ts
+// TypeScript: ✅
+// Node.js: 💥
+import {} from "node-has-no-idea-what-this-is";
+```
+
+While it’s ok for bundled apps to set up `paths` for pure convenience, it’s very important that published libraries do _not_, since the emitted JavaScript will not work for consumers of the library without those users setting up the same aliases for both TypeScript and their bundler.
+
+##### Relationship to `baseUrl`
+
+##### Wildcards
+
+- longest match wins
+
+##### Fallbacks
+
 TODO
 
-- originally designed for AMD but still useful in special cases
-- does not change emit
-- used to tell TypeScript about runtime resolutions that it can’t know about
-- some tools manifest tsconfig paths, but consider using `"imports"` instead
 
 #### `baseUrl`
 
