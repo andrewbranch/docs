@@ -420,18 +420,76 @@ The `paths` option does _not_ change the import path in the code emitted by Type
 import {} from "node-has-no-idea-what-this-is";
 ```
 
-While it’s ok for bundled apps to set up `paths` for pure convenience, it’s very important that published libraries do _not_, since the emitted JavaScript will not work for consumers of the library without those users setting up the same aliases for both TypeScript and their bundler.
+While it’s ok for bundled apps to set up `paths`, it’s very important that published libraries do _not_, since the emitted JavaScript will not work for consumers of the library without those users setting up the same aliases for both TypeScript and their bundler. Both libraries and apps can consider [package.json `"imports"`](#packagejson-imports-and-self-name-imports) as a standard replacement for convenience `paths` aliases.
+
+##### `paths` should not point to monorepo packages or node_modules packages
+
+While module specifiers that match `paths` aliases are bare specifiers, once the alias is resolved, module resolution proceeds on the resolved path as a relative path. Consequently, resolution features that happen for [`node_modules` package lookups](#node_modules-package-lookups), including package.json `"exports"` field support, do not take effect when a `paths` alias is matched. This can lead to surprising behavior if `paths` is used to point to a `node_modules` package:
+
+```ts
+{
+  "compilerOptions": {
+    "paths": {
+      "pkg": ["./node_modules/pkg/dist/index.d.ts"],
+      "pkg/*": ["./node_modules/pkg/*"]
+    }
+  }
+}
+```
+
+While this configuration may simulate some of the behavior of package resolution, it overrides any `main`, `types`, `exports`, and `typesVersions` the package’s `package.json` file defines, and imports from the package may fail at runtime.
+
+The same caveat applies to packages referencing each other in a monorepo. Instead of using `paths` to make TypeScript artificially resolve `"@my-scope/lib"` to a sibling package, it’s best to use workspaces via [npm](https://docs.npmjs.com/cli/v7/using-npm/workspaces), [yarn](https://classic.yarnpkg.com/en/docs/workspaces/), or [pnpm](https://pnpm.io/workspaces) to symlink your packages into `node_modules`, so both TypeScript and the runtime or bundler perform real `node_modules` package lookups. This is especially important if the monorepo packages will be published to npm—the packages will reference each other via `node_modules` package lookups once installed by users, and using workspaces allows you to test that behavior during local development.
 
 ##### Relationship to `baseUrl`
 
-##### Wildcards
+When [`baseUrl`](#baseurl) is provided, the values in each `paths` array are resolved relative to the `baseUrl`. Otherwise, they are resolved relative to the `tsconfig.json` file that defines them.
 
-- longest match wins
+##### Wildcard substitutions
+
+`paths` patterns can contain a single `*` wildcard, which matches any string. The `*` token can then be used in the file path values to substitute the matched string:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@app/*": ["./src/*"]
+    }
+  }
+}
+```
+
+When resolving an import of `"@app/components/Button"`, TypeScript will match on `@app/*`, binding `*` to `components/Button`, and then attempt to resolve the path `./src/components/Button` relative to the `tsconfig.json` path. The remainder of this lookup will follow the same rules as any other [relative path lookup](#relative-file-path-resolution) according to the `moduleResolution` setting.
+
+When multiple patterns match a module specifier, the pattern with the longest matching prefix before any `*` token is used:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "*": ["./src/foo/one.ts"],
+      "foo/*": ["./src/foo/two.ts"],
+      "foo/bar": ["./src/foo/three.ts"]
+    }
+  }
+}
+```
+
+When resolving an import of `"foo/bar"`, all three `paths` patterns match, but the last is used because `"foo/bar"` is longer than `"foo/"` and `""`.
 
 ##### Fallbacks
 
-TODO
+Multiple file paths can be provided for a path mapping. If resolution fails for one path, the next one in the array will be attempted until resolution succeeds or the end of the array is reached.
 
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "*": ["./vendor/*", "./types/*"]
+    }
+  }
+}
+```
 
 #### `baseUrl`
 
