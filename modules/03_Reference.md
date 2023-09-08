@@ -501,12 +501,6 @@ When performing a `baseUrl` lookup, resolution proceeds with the same rules as o
 
 Resolution of relative module specifiers are never affected by the `baseUrl` option.
 
-#### `rootDirs`
-
-TODO
-
-- also an AMD legacy - can we just ignore this?
-
 #### `node_modules` package lookups
 
 Node.js treats module specifiers that aren’t relative paths, absolute paths, or URLs as references to packages that it looks up in `node_modules` subdirectories. Bundlers conveniently adopted this behavior to allow their users to use the same dependency management system, and often even the same dependencies, as they would in Node.js. All of TypeScript’s `moduleResolution` options except `classic` support `node_modules` lookups. (`classic` supports lookups in `node_modules/@types` when other means of resolution fail, but never looks for packages in `node_modules` directly.) Every `node_modules` package lookup has the following structure (beginning after higher precedence bare specifier rules, like `paths`, `baseUrl`, self-name imports, and package.json `"imports"` lookups have been exhausted):
