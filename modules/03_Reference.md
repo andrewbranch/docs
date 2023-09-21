@@ -845,9 +845,7 @@ Resolution process:
 
 ### `node16`, `nodenext`
 
-`--moduleResolution node16` and `nodenext` must be pared with their [corresponding `module` value](#node16-nodenext). They are currently identical, but if Node.js makes significant changes to its module system in the future, `node16` will be frozen while `nodenext` will be updated to reflect the new behavior.
-
-These modes reflect the module resolution behavior of Node.js v12 and later, where the resolution algorithm for ECMAScript imports is significantly different from the algorithm for CommonJS `require` calls. For each module specifier being resolved, the syntax and the [module format of the importing file](#module-format-detection) are first used to determine whether the module specifier will be in an `import` or `require` in the emitted JavaScript. That information is then passed into the module resolver to determine which resolution algorithm to use (and whether to use the `"import"` or `"require"` condition for package.json [`"exports"`](#packagejson-exports) or [`"imports"`](#packagejson-imports-and-self-name-imports)).
+These modes reflect the module resolution behavior of Node.js v12 and later. (`node16` and `nodenext` are currently identical, but if Node.js makes significant changes to its module system in the future, `node16` will be frozen while `nodenext` will be updated to reflect the new behavior.) In Node.js, the resolution algorithm for ECMAScript imports is significantly different from the algorithm for CommonJS `require` calls. For each module specifier being resolved, the syntax and the [module format of the importing file](#module-format-detection) are first used to determine whether the module specifier will be in an `import` or `require` in the emitted JavaScript. That information is then passed into the module resolver to determine which resolution algorithm to use (and whether to use the `"import"` or `"require"` condition for package.json [`"exports"`](#packagejson-exports) or [`"imports"`](#packagejson-imports-and-self-name-imports)).
 
 > TypeScript files that are [determined to be in CommonJS format](#module-format-detection) may still use `import` and `export` syntax by default, but the emitted JavaScript will use `require` and `module.exports` instead. This means that it’s common to see `import` statements that are resolved using the `require` algorithm. If this causes confusion, the `verbatimModuleSyntax` compiler option can be enabled, which prohibits the use of `import` statements that would be emitted as `require` calls.
 
@@ -866,6 +864,10 @@ import("./mod.js");                   // `import` algorithm due to syntax (emitt
 type Mod = typeof import("./mod");    // `require` algorithm due to file format
 import mod = require("./mod");        // `require` algorithm due to syntax (emitted as `require`)
 ```
+
+#### Implied and enforced options
+
+- `--moduleResolution node16` and `nodenext` must be paired with their [corresponding `module` value](#node16-nodenext). 
 
 #### Supported features
 
@@ -886,7 +888,49 @@ Features are listed in order of precedence.
 
 ### `bundler`
 
-TODO
+`--moduleResolution bundler` attempts to model the module resolution behavior common to most JavaScript bundlers. In short, this means supporting all the behaviors traditionally associated with Node.js’s CommonJS `require` resolution algorithm like [`node_modules` lookups](#node_modules-package-lookups), [directory modules](#directory-modules-index-file-resolution), and [extensionless paths](#extensionless-relative-paths), while also supporting newer Node.js resolution features like [package.json `"exports"`](#packagejson-exports) and [package.json `"imports"`](#packagejson-imports-and-self-name-imports).
+
+This is very similar to the behavior of [`node16` and `nodenext`](#node16-nodenext-1) resolving in CommonJS mode, but in `bundler`, the conditions used to resolve package.json `"exports"` and `"imports"` are always `"types"` and `"import"`. To understand why, let’s compare against what happens to an import in a `.ts` file in `nodenext`:
+
+```ts
+// index.ts
+import { foo } from "pkg";
+```
+
+In `--module nodenext --moduleResolution nodenext`, the `--module` setting first [determines](#module-format-detection) whether the import will be emitted to the `.js` file as an `import` or `require` call and passes that information to TypeScript’s module resolver, which decides whether to match `"import"` or `"require"` conditions accordingly. This ensures TypeScript’s module resolution process, although working from input `.ts` files, reflects what will happen in Node.js’s module resolution process when it runs the output `.js` files.
+
+When using a bundler, on the other hand, the bundler typically processes the raw `.ts` files directly and runs its module resolution process on the untransformed `import` statement. In this scenario, it doesn’t make a lot of sense to think about how TypeScript will emit the `import`, because TypeScript isn’t being used to emit anything at all. As far as the bundler is concerned, `import`s are `import`s and `require`s are `require`s, so the conditions used to resolve package.json `"exports"` and `"imports"` are determined by the syntax seen in the input `.ts` file. Likewise, the conditions TypeScript’s module resolution process uses in `--moduleResolution bundler` are _also_ determined by the input syntax in input TypeScript files—it’s just that `require` calls are not currently resolved at all:
+
+```ts
+// Some library file:
+declare function require(module: string): any;
+
+// index.ts
+import { foo } from "pkg";    // Resolved with "import" condition
+import pkg2 = require("pkg"); // Not allowed
+const pkg = require("pkg");   // Not an error, but not resolved to anything
+   // ^? any
+```
+
+Since TypeScript doesn’t currently support resolving `require` calls in `--moduleResolution bundler`, everything it _does_ resolve uses the `"import"` condition.
+
+#### Implied and enforced options
+
+- `--moduleResolution bundler` must be paired with the `--module esnext` option.
+- `--moduleResolution bundler` implies `--allowSyntheticDefaultImports`.
+
+#### Supported features
+
+- [`paths`](#paths) ✅
+- [`baseUrl`](#baseurl) ✅
+- [`node_modules` package lookups](#node_modules-package-lookups) ✅
+- [package.json `"exports"`](#packagejson-exports) ✅ matches `types`, `import`
+- [package.json `"imports"` and self-name imports](#packagejson-imports-and-self-name-imports) ✅ matches `types`, `import`
+- [package.json `"typesVersions"`](#packagejson-typesversions) ✅
+- [Package-relative paths](#package-relative-file-paths) ✅ when `exports` not present
+- [Full relative paths](#relative-file-path-resolution) ✅
+- [Extensionless relative paths](#extensionless-relative-paths) ✅
+- [Directory modules](#directory-modules-index-file-resolution) ✅
 
 ### `node10` (formerly known as `node`)
 
