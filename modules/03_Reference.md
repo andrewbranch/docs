@@ -934,7 +934,20 @@ Since TypeScript doesn’t currently support resolving `require` calls in `--mod
 
 ### `node10` (formerly known as `node`)
 
-TODO
+`--moduleResolution node` was renamed to `node10` (keeping `node` as an alias for backward compatibility) in TypeScript 5.0. It reflects the CommonJS module resolution algorithm as it existed in Node.js versions earlier than v12. It should no longer be used.
+
+#### Supported features
+
+- [`paths`](#paths) ✅
+- [`baseUrl`](#baseurl) ✅
+- [`node_modules` package lookups](#node_modules-package-lookups) ✅
+- [package.json `"exports"`](#packagejson-exports) ❌
+- [package.json `"imports"` and self-name imports](#packagejson-imports-and-self-name-imports) ❌
+- [package.json `"typesVersions"`](#packagejson-typesversions) ✅
+- [Package-relative paths](#package-relative-file-paths) ✅
+- [Full relative paths](#relative-file-path-resolution) ✅
+- [Extensionless relative paths](#extensionless-relative-paths) ✅
+- [Directory modules](#directory-modules-index-file-resolution) ✅
 
 ### `classic`
 
